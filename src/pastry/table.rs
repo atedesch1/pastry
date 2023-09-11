@@ -6,6 +6,7 @@ use crate::{
 /// A struct for constructing the Pastry's Routing Table data structure.
 /// It keeps a 16x16 table (using u64 ids with hexadecimal digits) to store node structures in
 /// order to route requests to the apropriate node.
+#[derive(Debug, Clone)]
 pub struct RoutingTable<U>
 where
     U: HasID<u64>,
@@ -19,13 +20,13 @@ where
     U: Clone + HasID<u64>,
 {
     /// Creates a new instance of the RoutingTable struct.
-    fn new(id: u64) -> Self {
+    pub fn new(id: u64) -> Self {
         let table = vec![vec![None; 0xF as usize]; U64_HEX_NUM_OF_DIGITS as usize];
         Self { id, table }
     }
 
     /// Inserts a value into the table, overwriting the previous if not empty.
-    fn insert(&mut self, id: u64, val: U) -> Result<()> {
+    pub fn insert(&mut self, id: u64, val: U) -> Result<()> {
         for i in 0..U64_HEX_NUM_OF_DIGITS {
             let table_digit = get_nth_digit_in_u64_hex(self.id, i)?;
             let id_digit = get_nth_digit_in_u64_hex(id, i)?;
@@ -39,7 +40,7 @@ where
     }
 
     /// Returns the next node to route the request to in the Pastry algorithm.
-    fn route(&self, key: u64, min_matched_digits: u32) -> Result<U> {
+    pub fn route(&self, key: u64, min_matched_digits: u32) -> Result<U> {
         for i in min_matched_digits..U64_HEX_NUM_OF_DIGITS {
             let table_digit = get_nth_digit_in_u64_hex(self.id, i)?;
             let key_digit = get_nth_digit_in_u64_hex(key, i)?;
