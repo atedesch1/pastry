@@ -1,5 +1,5 @@
 use crate::error::{Error, Result};
-use std::{sync::RwLock, vec};
+use std::vec;
 
 /// A centered range set is a set of key value pairs which maintain an order based on their key.
 /// This set has an odd number for size and always has a middle element.
@@ -37,13 +37,14 @@ impl<T, U> KeyValuePair<T, U> {
 /// LeafSet is a Pastry's routing structure. It is used as a first set when routing requests.
 /// It works by implementing CenteredRangeSet trait, laying out node's keys and addresses as key
 /// value pairs.
+#[derive(Debug, Clone)]
 pub struct LeafSet<T, U>
 where
     T: PartialOrd + Clone,
     U: Clone,
 {
     size: usize,
-    set: RwLock<Vec<Option<KeyValuePair<T, U>>>>,
+    set: Vec<Option<KeyValuePair<T, U>>>,
 }
 
 impl<T, U> LeafSet<T, U>
@@ -56,12 +57,11 @@ where
     fn find_replace(&self, key: &T) -> Result<usize> {
         let mut l = 0;
         let mut r = self.size - 1;
-        let set = self.set.read()?;
 
         while l < r {
             let m = (r - l) / 2 + l;
 
-            if let Some(entry) = set[m].as_ref() {
+            if let Some(entry) = self.set[m].as_ref() {
                 if entry.key < *key {
                     l = m + 1;
                 } else if entry.key > *key {
@@ -79,7 +79,7 @@ where
             }
         }
 
-        if let Some(value) = set[l].as_ref() {
+        if let Some(value) = self.set[l].as_ref() {
             if l > 0 && l < self.size / 2 && value.key > *key {
                 l -= 1;
             }
@@ -93,12 +93,11 @@ where
     fn find_responsible(&self, key: &T) -> Result<Option<usize>> {
         let mut l = 0;
         let mut r = self.size - 1;
-        let set = self.set.read()?;
 
         while l <= r {
             let m = (r - l) / 2 + l;
 
-            if let Some(entry) = set[m].as_ref() {
+            if let Some(entry) = self.set[m].as_ref() {
                 if entry.key < *key {
                     l = m + 1;
                 } else if entry.key > *key {
@@ -117,7 +116,7 @@ where
             }
         }
 
-        if r == self.size - 1 || set[r].is_none() || set[r].as_ref().unwrap().key > *key {
+        if r == self.size - 1 || self.set[r].is_none() || self.set[r].as_ref().unwrap().key > *key {
             return Ok(None);
         }
 
@@ -126,9 +125,7 @@ where
 
     /// Returns a clone of the underlying set as a vector.
     fn get_set(&self) -> Result<Vec<Option<KeyValuePair<T, U>>>> {
-        let set = self.set.read()?;
-
-        Ok(set.clone())
+        Ok(self.set.clone())
     }
 }
 
@@ -152,17 +149,12 @@ where
         let mut v = vec![None; size];
         v[size / 2] = Some(KeyValuePair::new(center_key, center_value));
 
-        Ok(LeafSet {
-            size,
-            set: RwLock::new(v),
-        })
+        Ok(LeafSet { size, set: v })
     }
 
     fn insert(&mut self, key: T, value: U) -> Result<()> {
         let idx = self.find_replace(&key)?;
-        let mut set = self.set.write()?;
-
-        let mut prev = set[idx].take();
+        let mut prev = self.set[idx].take();
 
         if prev.is_some() && idx < self.size - 1 && idx > 0 {
             let range: Box<dyn Iterator<Item = usize>> = if idx > self.size / 2 {
@@ -172,41 +164,40 @@ where
             };
 
             for i in range {
-                let temp = set[i].take();
-                set[i] = prev;
+                let temp = self.set[i].take();
+                self.set[i] = prev;
                 prev = temp;
             }
         }
 
-        set[idx] = Some(KeyValuePair::new(key, value));
+        self.set[idx] = Some(KeyValuePair::new(key, value));
 
         Ok(())
     }
 
     fn remove(&mut self, key: T) -> Result<()> {
         let idx = self.find_replace(&key)?;
-        let mut set = self.set.write()?;
 
         if idx == self.size / 2 {
             return Err(Error::Internal("Cannot remove middle element".into()));
         }
-        if set[idx].is_none() || set[idx].as_ref().unwrap().key != key {
+        if self.set[idx].is_none() || self.set[idx].as_ref().unwrap().key != key {
             return Err(Error::Internal("Cannot find key in leaf set".into()));
         }
 
         let mut i = idx;
         if idx > self.size / 2 {
             while i < self.size - 1 {
-                set[i] = set[i + 1].take();
+                self.set[i] = self.set[i + 1].take();
                 i += 1;
             }
-            set[self.size - 1] = None;
+            self.set[self.size - 1] = None;
         } else {
             while i > 0 {
-                set[i] = set[i - 1].take();
+                self.set[i] = self.set[i - 1].take();
                 i -= 1;
             }
-            set[0] = None;
+            self.set[0] = None;
         }
 
         Ok(())
@@ -214,10 +205,8 @@ where
 
     fn get(&self, key: T) -> Result<Option<U>> {
         let idx = self.find_responsible(&key)?;
-        let set = self.set.read()?;
-
         Ok(idx
-            .map(|i| set[i].as_ref().unwrap())
+            .map(|i| self.set[i].as_ref().unwrap())
             .map(|kv| kv.value.to_owned()))
     }
 }
