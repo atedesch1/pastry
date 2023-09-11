@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package dht.node;
+
+message GetNodeIdResponse {
+  uint64 id = 1;
+}
+
+message JoinRequest {
+  uint64 id = 1;
+}
+
+message LeaveRequest {
+  uint64 id = 1;
+}
+
+enum OperationType {
+  Get = 0;
+  Delete = 1;
+  Set = 2;
+}
+
+message QueryRequest {
+  uint64 from_id = 1;
+  OperationType op_type = 2;
+
+  uint64 key = 3;
+  optional bytes value = 4;
+}
+
+message QueryResponse {
+  optional string error = 1;
+  optional uint64 from_id = 2;
+
+  optional bytes value = 3;
+}

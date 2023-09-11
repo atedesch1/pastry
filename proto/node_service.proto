@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package dht.node;
+
+import "google/protobuf/empty.proto";
+import "node.proto";
+service NodeService {
+  rpc GetNodeId(google.protobuf.Empty) returns (GetNodeIdResponse);
+
+  rpc Join(JoinRequest) returns (google.protobuf.Empty);
+
+  rpc Leave(LeaveRequest) returns (google.protobuf.Empty);
+
+  rpc Query(QueryRequest) returns (QueryResponse);
+}
