@@ -1,0 +1,9 @@
+[package]
+name = "pastry"
+description = "A Pastry DHT protocol implementation in Rust."
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = "*"
+env_logger = "*"
