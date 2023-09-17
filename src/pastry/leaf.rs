@@ -1,31 +1,10 @@
 use crate::error::{Error, Result};
 use std::vec;
 
-/// A centered range set is a set of key value pairs which maintain an order based on their key.
-/// This set has an odd number for size and always has a middle element.
-pub trait CenteredRangeSet<T, U>
-where
-    T: PartialOrd + Clone,
-    U: Clone,
-{
-    /// Creates new instance of a centered range set.
-    fn new(size: usize, center_key: T, center_value: U) -> Result<Self>
-    where
-        Self: Sized;
-    /// Inserts a new key value pair into the set by pushing other elements to the edges of the
-    /// set.
-    fn insert(&mut self, key: T, value: U) -> Result<()>;
-    /// Removes a key value pair from the set and pulls other elements to the center of the set.
-    fn remove(&mut self, key: T) -> Result<()>;
-    /// Returns the key value pair responsible for the key provided. A key value pair is
-    /// responsible for a key 'k' if 'k' lies in between the pair's key and the next pair's key.
-    fn get(&self, key: T) -> Result<Option<U>>;
-}
-
 #[derive(Debug, Clone, PartialEq)]
-struct KeyValuePair<T, U> {
-    key: T,
-    value: U,
+pub struct KeyValuePair<T, U> {
+    pub key: T,
+    pub value: U,
 }
 
 impl<T, U> KeyValuePair<T, U> {
@@ -34,489 +13,232 @@ impl<T, U> KeyValuePair<T, U> {
     }
 }
 
-/// LeafSet is a Pastry's routing structure. It is used as a first set when routing requests.
-/// It works by implementing CenteredRangeSet trait, laying out node's keys and addresses as key
-/// value pairs.
 #[derive(Debug, Clone)]
-pub struct LeafSet<T, U>
-where
-    T: PartialOrd + Clone,
-    U: Clone,
-{
-    size: usize,
-    set: Vec<Option<KeyValuePair<T, U>>>,
+pub struct LeafSet<T: Clone> {
+    max_size: usize,
+    node_idx: usize,
+    set: Vec<KeyValuePair<u64, T>>,
 }
 
-impl<T, U> LeafSet<T, U>
-where
-    T: PartialOrd + Clone,
-    U: Clone,
-{
-    /// Finds the index of the node to replace.
-    /// This is used when inserting a new node or removing a node from the leaf set.
-    fn find_replace(&self, key: &T) -> Result<usize> {
-        let mut l = 0;
-        let mut r = self.size - 1;
-
-        while l < r {
-            let m = (r - l) / 2 + l;
-
-            if let Some(entry) = self.set[m].as_ref() {
-                if entry.key < *key {
-                    l = m + 1;
-                } else if entry.key > *key {
-                    if m == 0 {
-                        break;
-                    }
-                    r = m - 1;
-                } else {
-                    return Ok(m);
-                }
-            } else if m > self.size / 2 {
-                r = m - 1;
-            } else {
-                l = m + 1;
-            }
+impl<T: Clone> LeafSet<T> {
+    pub fn new(k: usize, initial_key: u64, initial_value: T) -> Result<Self> {
+        if k < 1 {
+            return Err(Error::Config("cannot have leaf set with k < 1".into()));
         }
 
-        if let Some(value) = self.set[l].as_ref() {
-            if l > 0 && l < self.size / 2 && value.key > *key {
-                l -= 1;
-            }
-        }
-
-        Ok(l)
+        Ok(Self {
+            max_size: 2 * k + 1,
+            node_idx: 0,
+            set: vec![KeyValuePair::new(initial_key, initial_value)],
+        })
     }
 
-    /// Finds the index of the node responsible for key.
-    /// If not in leaf set returns None.
-    fn find_responsible(&self, key: &T) -> Result<Option<usize>> {
-        let mut l = 0;
-        let mut r = self.size - 1;
+    pub fn insert(&mut self, key: u64, value: T) -> Result<()> {
+        let new_pair = KeyValuePair::new(key, value);
 
-        while l <= r {
-            let m = (r - l) / 2 + l;
+        if self.set.len() < self.max_size {
+            let position = self.find_responsible(key).unwrap();
 
-            if let Some(entry) = self.set[m].as_ref() {
-                if entry.key < *key {
-                    l = m + 1;
-                } else if entry.key > *key {
-                    if m == 0 {
-                        break;
-                    }
-                    r = m - 1;
-                } else {
-                    r = m;
-                    break;
-                }
-            } else if m > self.size / 2 {
-                r = m - 1;
-            } else {
-                l = m + 1;
+            self.set.insert(position + 1, new_pair);
+
+            if position + 1 <= self.node_idx {
+                self.node_idx += 1;
             }
-        }
-
-        if r == self.size - 1 || self.set[r].is_none() || self.set[r].as_ref().unwrap().key > *key {
-            return Ok(None);
-        }
-
-        Ok(Some(r))
-    }
-
-    /// Returns a clone of the underlying set as a vector.
-    fn get_set(&self) -> Result<Vec<Option<KeyValuePair<T, U>>>> {
-        Ok(self.set.clone())
-    }
-}
-
-impl<T, U> CenteredRangeSet<T, U> for LeafSet<T, U>
-where
-    T: PartialOrd + Clone,
-    U: Clone,
-{
-    fn new(size: usize, center_key: T, center_value: U) -> Result<Self> {
-        if size % 2 == 0 {
-            return Err(Error::Config(
-                "Leaf set should have an odd number size.".into(),
-            ));
-        }
-        if size < 3 {
-            return Err(Error::Config(
-                "Leaf set should have at least 3 entries.".into(),
-            ));
-        }
-
-        let mut v = vec![None; size];
-        v[size / 2] = Some(KeyValuePair::new(center_key, center_value));
-
-        Ok(LeafSet { size, set: v })
-    }
-
-    fn insert(&mut self, key: T, value: U) -> Result<()> {
-        let idx = self.find_replace(&key)?;
-        let mut prev = self.set[idx].take();
-
-        if prev.is_some() && idx < self.size - 1 && idx > 0 {
-            let range: Box<dyn Iterator<Item = usize>> = if idx > self.size / 2 {
-                Box::new(idx + 1..self.size)
-            } else {
-                Box::new((0..idx).rev())
-            };
-
-            for i in range {
-                let temp = self.set[i].take();
-                self.set[i] = prev;
-                prev = temp;
-            }
-        }
-
-        self.set[idx] = Some(KeyValuePair::new(key, value));
-
-        Ok(())
-    }
-
-    fn remove(&mut self, key: T) -> Result<()> {
-        let idx = self.find_replace(&key)?;
-
-        if idx == self.size / 2 {
-            return Err(Error::Internal("Cannot remove middle element".into()));
-        }
-        if self.set[idx].is_none() || self.set[idx].as_ref().unwrap().key != key {
-            return Err(Error::Internal("Cannot find key in leaf set".into()));
-        }
-
-        let mut i = idx;
-        if idx > self.size / 2 {
-            while i < self.size - 1 {
-                self.set[i] = self.set[i + 1].take();
-                i += 1;
-            }
-            self.set[self.size - 1] = None;
         } else {
-            while i > 0 {
-                self.set[i] = self.set[i - 1].take();
-                i -= 1;
+            let position = self
+                .find_responsible(key)
+                .ok_or(Error::Internal("key cannot be outside set".into()))?;
+
+            if self.is_right_neighbor(position).unwrap() {
+                let last_index = self.get_last_index().unwrap();
+                self.set[last_index] = new_pair;
+            } else {
+                let first_index = self.get_first_index().unwrap();
+                self.set[first_index] = new_pair;
             }
-            self.set[0] = None;
+
+            self.set.sort_by_key(|e| e.key);
         }
 
         Ok(())
     }
 
-    fn get(&self, key: T) -> Result<Option<U>> {
-        let idx = self.find_responsible(&key)?;
-        Ok(idx
-            .map(|i| self.set[i].as_ref().unwrap())
-            .map(|kv| kv.value.to_owned()))
+    pub fn remove(&mut self, key: u64) -> Result<()> {
+        let position = self
+            .set
+            .iter()
+            .position(|e| e.key == key)
+            .ok_or(Error::Internal(format!(
+                "cannot find element with key {}",
+                key
+            )))?;
+
+        if position == self.node_idx {
+            return Err(Error::Internal("cannot remove node from leaf set".into()));
+        }
+
+        self.set.remove(position);
+
+        if position < self.node_idx {
+            self.node_idx -= 1;
+        }
+
+        Ok(())
+    }
+
+    pub fn get(&self, key: u64) -> Option<T> {
+        self.find_responsible(key)
+            .map(|idx| self.set[idx].value.clone())
+    }
+
+    fn find_responsible(&self, key: u64) -> Option<usize> {
+        let mut position = match self.set.binary_search_by(|pair| pair.key.cmp(&key)) {
+            Ok(position) => position,
+            Err(position) => position,
+        };
+
+        if position == self.set.len() {
+            position -= 1;
+        }
+
+        if key < self.set[position].key {
+            position = if position == 0 {
+                self.set.len() - 1
+            } else {
+                position - 1
+            };
+        }
+
+        if self.set.len() == self.max_size && position == self.get_last_index().unwrap() {
+            return None;
+        }
+
+        Some(position)
+    }
+
+    fn get_first_index(&self) -> Option<usize> {
+        if self.set.len() < self.max_size {
+            return None;
+        }
+
+        Some((self.max_size + self.node_idx - self.max_size / 2) % self.max_size)
+    }
+
+    fn get_last_index(&self) -> Option<usize> {
+        if self.set.len() < self.max_size {
+            return None;
+        }
+
+        Some((self.node_idx + self.max_size / 2) % self.max_size)
+    }
+
+    fn is_right_neighbor(&self, idx: usize) -> Result<bool> {
+        if idx >= self.set.len() {
+            return Err(Error::Internal("index is out of bounds".into()));
+        }
+
+        if self.set.len() < self.max_size {
+            return Ok(true);
+        }
+
+        let last_index = self.get_last_index().unwrap();
+
+        Ok(if last_index > self.node_idx {
+            self.node_idx <= idx && idx <= last_index
+        } else {
+            (self.node_idx <= idx && idx < self.set.len()) || (idx <= last_index)
+        })
     }
 }
 
-#[test]
-fn test_find_replace() -> Result<()> {
-    let mut leaf_set = LeafSet::new(5, 100, 100)?;
-    // [x,x,100,x,x]
-    assert_eq!(leaf_set.find_replace(&100)?, 2);
-    assert_eq!(leaf_set.find_replace(&150)?, 3);
-    assert_eq!(leaf_set.find_replace(&50)?, 1);
+mod tests {
+    use crate::error::{Error, Result};
 
-    leaf_set.insert(150, 150)?;
-    // [x,x,100,150,x]
-    assert_eq!(leaf_set.find_replace(&125)?, 3);
-    assert_eq!(leaf_set.find_replace(&150)?, 3);
-    assert_eq!(leaf_set.find_replace(&200)?, 4);
+    use super::{KeyValuePair, LeafSet};
 
-    leaf_set.insert(200, 200)?;
-    // [x,x,100,150,200]
-    assert_eq!(leaf_set.find_replace(&175)?, 4);
-    assert_eq!(leaf_set.find_replace(&200)?, 4);
+    fn leafset_from_vec(k: usize, initial: u64, v: Vec<u64>) -> LeafSet<Option<()>> {
+        let mut leaf: LeafSet<Option<()>> = LeafSet::new(k, initial, None).unwrap();
+        leaf.set = v.iter().map(|&i| KeyValuePair::new(i, None)).collect();
+        leaf.node_idx = v.iter().position(|&i| i == initial).unwrap();
+        leaf
+    }
 
-    leaf_set.insert(50, 50)?;
-    // [x,50,100,150,200]
-    assert_eq!(leaf_set.find_replace(&50)?, 1);
-    assert_eq!(leaf_set.find_replace(&75)?, 1);
-    assert_eq!(leaf_set.find_replace(&0)?, 0);
+    fn set_to_vec<T: Clone>(leafset: &LeafSet<T>) -> Vec<u64> {
+        leafset.set.iter().map(|val| val.key).collect()
+    }
 
-    leaf_set.insert(0, 0)?;
-    // [0,50,100,150,200]
-    assert_eq!(leaf_set.find_replace(&0)?, 0);
-    assert_eq!(leaf_set.find_replace(&25)?, 0);
-    assert_eq!(leaf_set.find_replace(&-25)?, 0);
+    #[test]
+    fn test_find_responsible() -> Result<()> {
+        let k = 2;
+        // Size < MAX_SIZE
 
-    Ok(())
-}
+        // -> 300 -> 100 -> 200 ->
+        let leafset = leafset_from_vec(k, 100, vec![100, 200, 300]);
+        assert_eq!(leafset.find_responsible(350), Some(2));
+        assert_eq!(leafset.find_responsible(50), Some(2));
+        assert_eq!(leafset.find_responsible(150), Some(0));
+        assert_eq!(leafset.find_responsible(250), Some(1));
 
-#[test]
-fn test_find_responsible() -> Result<()> {
-    let mut leaf_set = LeafSet::new(5, 100, 100)?;
-    // [x,x,100,x,x]
-    assert_eq!(leaf_set.find_responsible(&100)?, Some(2));
-    assert_eq!(leaf_set.find_responsible(&150)?, Some(2));
-    assert_eq!(leaf_set.find_responsible(&50)?, None);
+        // Size == MAX_SIZE
 
-    leaf_set.insert(150, 150)?;
-    // [x,x,100,150,x]
-    assert_eq!(leaf_set.find_responsible(&125)?, Some(2));
-    assert_eq!(leaf_set.find_responsible(&150)?, Some(3));
-    assert_eq!(leaf_set.find_responsible(&200)?, Some(3));
+        // 400 -> 500 -> 100 -> 200 -> 300
+        let leafset = leafset_from_vec(k, 100, vec![100, 200, 300, 400, 500]);
+        assert_eq!(leafset.find_responsible(450), Some(3));
+        assert_eq!(leafset.find_responsible(550), Some(4));
+        assert_eq!(leafset.find_responsible(150), Some(0));
+        assert_eq!(leafset.find_responsible(250), Some(1));
+        assert_eq!(leafset.find_responsible(350), None);
 
-    leaf_set.insert(200, 200)?;
-    // [x,x,100,150,200]
-    assert_eq!(leaf_set.find_responsible(&175)?, Some(3));
-    assert_eq!(leaf_set.find_responsible(&200)?, None);
-    assert_eq!(leaf_set.find_responsible(&250)?, None);
+        // 100 -> 200 -> 300 -> 400 -> 500
+        let leafset = leafset_from_vec(k, 300, vec![100, 200, 300, 400, 500]);
+        assert_eq!(leafset.find_responsible(50), None);
+        assert_eq!(leafset.find_responsible(150), Some(0));
+        assert_eq!(leafset.find_responsible(250), Some(1));
+        assert_eq!(leafset.find_responsible(350), Some(2));
+        assert_eq!(leafset.find_responsible(450), Some(3));
+        assert_eq!(leafset.find_responsible(550), None);
 
-    leaf_set.insert(50, 50)?;
-    // [x,50,100,150,200]
-    assert_eq!(leaf_set.find_responsible(&50)?, Some(1));
-    assert_eq!(leaf_set.find_responsible(&75)?, Some(1));
-    assert_eq!(leaf_set.find_responsible(&0)?, None);
+        Ok(())
+    }
 
-    leaf_set.insert(0, 0)?;
-    // [0,50,100,150,200]
-    assert_eq!(leaf_set.find_responsible(&0)?, Some(0));
-    assert_eq!(leaf_set.find_responsible(&25)?, Some(0));
-    assert_eq!(leaf_set.find_responsible(&-25)?, None);
+    #[test]
+    fn test_insert() -> Result<()> {
+        let k = 2;
+        let mut leaf: LeafSet<Option<()>> = LeafSet::new(k, 0, None).unwrap();
 
-    Ok(())
-}
+        leaf.insert(2, None)?;
+        assert_eq!(set_to_vec(&leaf), vec![0, 2]);
+        leaf.insert(4, None)?;
+        assert_eq!(set_to_vec(&leaf), vec![0, 2, 4]);
+        leaf.insert(6, None)?;
+        assert_eq!(set_to_vec(&leaf), vec![0, 2, 4, 6]);
+        leaf.insert(8, None)?;
+        assert_eq!(set_to_vec(&leaf), vec![0, 2, 4, 6, 8]);
 
-#[test]
-fn test_insert() -> Result<()> {
-    let mut leaf_set = LeafSet::new(5, 100, 100)?;
-    assert_eq!(
-        leaf_set.get_set()?,
-        vec![None, None, Some(KeyValuePair::new(100, 100)), None, None]
-    );
+        assert_eq!(leaf.insert(5, None).is_err(), true);
 
-    // [x,x,100,x,x] -> [x,x,100,150,x]
-    leaf_set.insert(150, 150)?;
-    assert_eq!(
-        leaf_set.get_set()?,
-        vec![
-            None,
-            None,
-            Some(KeyValuePair::new(100, 100)),
-            Some(KeyValuePair::new(150, 150)),
-            None
-        ]
-    );
+        leaf.insert(3, None)?;
+        assert_eq!(set_to_vec(&leaf), vec![0, 2, 3, 6, 8]);
+        leaf.insert(1, None)?;
+        assert_eq!(set_to_vec(&leaf), vec![0, 1, 2, 6, 8]);
+        leaf.insert(7, None)?;
+        assert_eq!(set_to_vec(&leaf), vec![0, 1, 2, 7, 8]);
 
-    // [x,x,100,150,x] -> [x,x,100,150,200]
-    leaf_set.insert(200, 200)?;
-    assert_eq!(
-        leaf_set.get_set()?,
-        vec![
-            None,
-            None,
-            Some(KeyValuePair::new(100, 100)),
-            Some(KeyValuePair::new(150, 150)),
-            Some(KeyValuePair::new(200, 200)),
-        ]
-    );
+        Ok(())
+    }
 
-    // [x,x,100,150,200] -> [x,x,100,150,175]
-    leaf_set.insert(175, 175)?;
-    assert_eq!(
-        leaf_set.get_set()?,
-        vec![
-            None,
-            None,
-            Some(KeyValuePair::new(100, 100)),
-            Some(KeyValuePair::new(150, 150)),
-            Some(KeyValuePair::new(175, 175)),
-        ]
-    );
+    #[test]
+    fn test_remove() -> Result<()> {
+        let k = 2;
+        let mut leaf = leafset_from_vec(k, 200, vec![100, 200, 300, 400]);
 
-    // [x,x,100,150,175] -> [x,x,100,150,200]
-    leaf_set.insert(200, 200)?;
-    assert_eq!(
-        leaf_set.get_set()?,
-        vec![
-            None,
-            None,
-            Some(KeyValuePair::new(100, 100)),
-            Some(KeyValuePair::new(150, 150)),
-            Some(KeyValuePair::new(200, 200)),
-        ]
-    );
+        leaf.remove(100)?;
+        assert_eq!(set_to_vec(&leaf), vec![200, 300, 400]);
+        assert_eq!(leaf.node_idx, 0);
+        leaf.remove(300)?;
+        assert_eq!(set_to_vec(&leaf), vec![200, 400]);
+        assert_eq!(leaf.node_idx, 0);
 
-    // [x,x,100,150,200] -> [x,x,100,125,150]
-    leaf_set.insert(125, 125)?;
-    assert_eq!(
-        leaf_set.get_set()?,
-        vec![
-            None,
-            None,
-            Some(KeyValuePair::new(100, 100)),
-            Some(KeyValuePair::new(125, 125)),
-            Some(KeyValuePair::new(150, 150)),
-        ]
-    );
-
-    // [x,x,100,125,150] -> [x,50,100,125,150]
-    leaf_set.insert(50, 50)?;
-    assert_eq!(
-        leaf_set.get_set()?,
-        vec![
-            None,
-            Some(KeyValuePair::new(50, 50)),
-            Some(KeyValuePair::new(100, 100)),
-            Some(KeyValuePair::new(125, 125)),
-            Some(KeyValuePair::new(150, 150)),
-        ]
-    );
-
-    // [x,50,100,125,150] -> [50,75,100,125,150]
-    leaf_set.insert(75, 75)?;
-    assert_eq!(
-        leaf_set.get_set()?,
-        vec![
-            Some(KeyValuePair::new(50, 50)),
-            Some(KeyValuePair::new(75, 75)),
-            Some(KeyValuePair::new(100, 100)),
-            Some(KeyValuePair::new(125, 125)),
-            Some(KeyValuePair::new(150, 150)),
-        ]
-    );
-
-    // [50,75,100,125,150] -> [0,75,100,125,150]
-    leaf_set.insert(0, 0)?;
-    assert_eq!(
-        leaf_set.get_set()?,
-        vec![
-            Some(KeyValuePair::new(0, 0)),
-            Some(KeyValuePair::new(75, 75)),
-            Some(KeyValuePair::new(100, 100)),
-            Some(KeyValuePair::new(125, 125)),
-            Some(KeyValuePair::new(150, 150)),
-        ]
-    );
-
-    Ok(())
-}
-
-#[test]
-fn test_remove() -> Result<()> {
-    let mut leaf_set = LeafSet::new(5, 100, 100)?;
-    leaf_set.insert(150, 150)?;
-    leaf_set.insert(200, 200)?;
-    leaf_set.insert(50, 50)?;
-    leaf_set.insert(0, 0)?;
-    // [0,50,100,150,200]
-    assert_eq!(
-        leaf_set.get_set()?,
-        vec![
-            Some(KeyValuePair::new(0, 0)),
-            Some(KeyValuePair::new(50, 50)),
-            Some(KeyValuePair::new(100, 100)),
-            Some(KeyValuePair::new(150, 150)),
-            Some(KeyValuePair::new(200, 200)),
-        ]
-    );
-    // [0,50,100,150,200] -> [0,50,100,150,x]
-    leaf_set.remove(200)?;
-    assert_eq!(
-        leaf_set.get_set()?,
-        vec![
-            Some(KeyValuePair::new(0, 0)),
-            Some(KeyValuePair::new(50, 50)),
-            Some(KeyValuePair::new(100, 100)),
-            Some(KeyValuePair::new(150, 150)),
-            None
-        ]
-    );
-    leaf_set.insert(200, 200)?;
-
-    // [0,50,100,150,200] -> [0,50,100,200,x]
-    leaf_set.remove(150)?;
-    assert_eq!(
-        leaf_set.get_set()?,
-        vec![
-            Some(KeyValuePair::new(0, 0)),
-            Some(KeyValuePair::new(50, 50)),
-            Some(KeyValuePair::new(100, 100)),
-            Some(KeyValuePair::new(200, 200)),
-            None
-        ]
-    );
-
-    // [0,50,100,200,x] -> [0,50,100,x,x]
-    leaf_set.remove(200)?;
-    assert_eq!(
-        leaf_set.get_set()?,
-        vec![
-            Some(KeyValuePair::new(0, 0)),
-            Some(KeyValuePair::new(50, 50)),
-            Some(KeyValuePair::new(100, 100)),
-            None,
-            None
-        ]
-    );
-    leaf_set.insert(150, 150)?;
-    leaf_set.insert(200, 200)?;
-
-    // [0,50,100,150,200] -> [x,50,100,150,200]
-    leaf_set.remove(0)?;
-    assert_eq!(
-        leaf_set.get_set()?,
-        vec![
-            None,
-            Some(KeyValuePair::new(50, 50)),
-            Some(KeyValuePair::new(100, 100)),
-            Some(KeyValuePair::new(150, 150)),
-            Some(KeyValuePair::new(200, 200))
-        ]
-    );
-    leaf_set.insert(0, 0)?;
-
-    // [0,50,100,150,200] -> [x,0,100,150,200]
-    leaf_set.remove(50)?;
-    assert_eq!(
-        leaf_set.get_set()?,
-        vec![
-            None,
-            Some(KeyValuePair::new(0, 0)),
-            Some(KeyValuePair::new(100, 100)),
-            Some(KeyValuePair::new(150, 150)),
-            Some(KeyValuePair::new(200, 200))
-        ]
-    );
-
-    Ok(())
-}
-
-#[test]
-fn test_get() -> Result<()> {
-    let mut leaf_set = LeafSet::new(5, 100, 100)?;
-    leaf_set.insert(150, 150)?;
-    leaf_set.insert(200, 200)?;
-    leaf_set.insert(50, 50)?;
-    leaf_set.insert(0, 0)?;
-
-    // [0,50,100,150,200]
-    assert_eq!(leaf_set.get(-25)?, None);
-    assert_eq!(leaf_set.get(25)?, Some(0));
-    assert_eq!(leaf_set.get(75)?, Some(50));
-    assert_eq!(leaf_set.get(125)?, Some(100));
-    assert_eq!(leaf_set.get(175)?, Some(150));
-    assert_eq!(leaf_set.get(225)?, None);
-
-    leaf_set.remove(200)?;
-    // [0,50,100,150,x]
-    assert_eq!(leaf_set.get(175)?, Some(150));
-
-    leaf_set.remove(150)?;
-    // [0,50,100,x,x]
-    assert_eq!(leaf_set.get(150)?, Some(100));
-
-    leaf_set.remove(0)?;
-    // [x,50,100,x,x]
-    assert_eq!(leaf_set.get(25)?, None);
-
-    leaf_set.remove(50)?;
-    // [x,x,100,x,x]
-    assert_eq!(leaf_set.get(125)?, Some(100));
-    assert_eq!(leaf_set.get(75)?, None);
-
-    Ok(())
+        Ok(())
+    }
 }
