@@ -37,11 +37,15 @@ impl<T: Clone> LeafSet<T> {
         let new_pair = KeyValuePair::new(key, value);
 
         if self.set.len() < self.max_size {
-            let position = self.find_responsible(key).unwrap();
+            let mut position = self.find_responsible(key).unwrap();
 
-            self.set.insert(position + 1, new_pair);
+            if position != self.set.len() && key > self.set[position].key {
+                position += 1;
+            }
 
-            if position + 1 <= self.node_idx {
+            self.set.insert(position, new_pair);
+
+            if position <= self.node_idx {
                 self.node_idx += 1;
             }
         } else {
@@ -49,13 +53,12 @@ impl<T: Clone> LeafSet<T> {
                 .find_responsible(key)
                 .ok_or(Error::Internal("key cannot be outside set".into()))?;
 
-            if self.is_right_neighbor(position).unwrap() {
-                let last_index = self.get_last_index().unwrap();
-                self.set[last_index] = new_pair;
+            let replaced_index = if self.is_right_neighbor(position).unwrap() {
+                self.get_last_index().unwrap()
             } else {
-                let first_index = self.get_first_index().unwrap();
-                self.set[first_index] = new_pair;
-            }
+                self.get_first_index().unwrap()
+            };
+            self.set[replaced_index] = new_pair;
 
             self.set.sort_by_key(|e| e.key);
         }
@@ -116,7 +119,7 @@ impl<T: Clone> LeafSet<T> {
         Some(position)
     }
 
-    fn get_first_index(&self) -> Option<usize> {
+    pub fn get_first_index(&self) -> Option<usize> {
         if self.set.len() < self.max_size {
             return None;
         }
@@ -124,7 +127,7 @@ impl<T: Clone> LeafSet<T> {
         Some((self.max_size + self.node_idx - self.max_size / 2) % self.max_size)
     }
 
-    fn get_last_index(&self) -> Option<usize> {
+    pub fn get_last_index(&self) -> Option<usize> {
         if self.set.len() < self.max_size {
             return None;
         }
@@ -148,6 +151,18 @@ impl<T: Clone> LeafSet<T> {
         } else {
             (self.node_idx <= idx && idx < self.set.len()) || (idx <= last_index)
         })
+    }
+
+    pub fn get_set(&self) -> Vec<KeyValuePair<u64, T>> {
+        self.set.clone()
+    }
+
+    pub fn get_node_index(&self) -> usize {
+        self.node_idx
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.set.len() == self.max_size
     }
 }
 
