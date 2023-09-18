@@ -7,7 +7,7 @@ import "node.proto";
 service NodeService {
   rpc GetNodeId(google.protobuf.Empty) returns (GetNodeIdResponse);
 
-  rpc Join(JoinRequest) returns (google.protobuf.Empty);
+  rpc Join(JoinRequest) returns (JoinResponse);
 
   rpc Leave(LeaveRequest) returns (google.protobuf.Empty);
 

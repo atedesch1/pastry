@@ -8,6 +8,18 @@ message GetNodeIdResponse {
 
 message JoinRequest {
   uint64 id = 1;
+  string pub_addr = 2;
+}
+
+message LeafSetEntry {
+  uint64 id = 1;
+  string pub_addr = 2;
+}
+
+message JoinResponse {
+  uint64 id = 1;
+  string pub_addr = 2;
+  repeated LeafSetEntry leaf_set = 3;
 }
 
 message LeaveRequest {
