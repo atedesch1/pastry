@@ -2,6 +2,7 @@ use std::{
     array::TryFromSliceError,
     fmt::{self, Display},
     net::AddrParseError,
+    num::ParseIntError,
     time::SystemTimeError,
 };
 
@@ -44,6 +45,12 @@ impl From<std::io::Error> for Error {
 
 impl From<AddrParseError> for Error {
     fn from(err: AddrParseError) -> Self {
+        Error::Internal(err.to_string())
+    }
+}
+
+impl From<ParseIntError> for Error {
+    fn from(err: ParseIntError) -> Self {
         Error::Internal(err.to_string())
     }
 }
