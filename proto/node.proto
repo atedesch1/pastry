@@ -6,14 +6,19 @@ message GetNodeIdResponse {
   uint64 id = 1;
 }
 
+message GetNodeStateResponse {
+  uint64 id = 1;
+  repeated LeafSetEntry leaf_set = 2;
+}
+
 message JoinRequest {
   uint64 id = 1;
   string pub_addr = 2;
 }
 
 message LeafSetEntry {
-  uint64 id = 1;
-  string pub_addr = 2;
+    uint64 id = 1;
+    string pub_addr = 2;
 }
 
 message JoinResponse {
@@ -26,23 +31,18 @@ message LeaveRequest {
   uint64 id = 1;
 }
 
-enum OperationType {
-  Get = 0;
-  Delete = 1;
-  Set = 2;
-}
-
 message QueryRequest {
   uint64 from_id = 1;
-  OperationType op_type = 2;
+  uint32 matched_digits = 2;
 
   uint64 key = 3;
-  optional bytes value = 4;
 }
 
 message QueryResponse {
-  optional string error = 1;
-  optional uint64 from_id = 2;
+  uint64 id = 1;
+}
 
-  optional bytes value = 3;
+message UpdateNeighborsRequest {
+    uint64 id = 1;
+    string pub_addr = 2;
 }

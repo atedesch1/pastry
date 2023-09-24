@@ -4,12 +4,17 @@ package dht.node;
 
 import "google/protobuf/empty.proto";
 import "node.proto";
+
 service NodeService {
+  // DEBUG
   rpc GetNodeId(google.protobuf.Empty) returns (GetNodeIdResponse);
+  rpc GetNodeState(google.protobuf.Empty) returns (GetNodeStateResponse);
 
+  // MAIN REQUESTS
   rpc Join(JoinRequest) returns (JoinResponse);
-
   rpc Leave(LeaveRequest) returns (google.protobuf.Empty);
-
   rpc Query(QueryRequest) returns (QueryResponse);
+
+  // UPDATE
+  rpc UpdateNeighbors(UpdateNeighborsRequest) returns (google.protobuf.Empty);
 }
