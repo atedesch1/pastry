@@ -1,3 +1,4 @@
+use log::info;
 use tonic::{Request, Response, Status};
 
 use crate::{
@@ -15,6 +16,7 @@ impl NodeService for super::node::Node {
         &self,
         _request: Request<()>,
     ) -> std::result::Result<Response<GetNodeIdResponse>, Status> {
+        info!("#{:x}: Got request for get_node_id", self.id);
         self.block_until_connected().await;
 
         Ok(Response::new(GetNodeIdResponse { id: self.id }))
@@ -24,13 +26,15 @@ impl NodeService for super::node::Node {
         &self,
         _request: Request<()>,
     ) -> std::result::Result<Response<GetNodeStateResponse>, Status> {
+        info!("#{:x}: Got request for get_node_state", self.id);
         self.block_until_connected().await;
-
-        let leaf = self.leaf.read().await;
 
         Ok(Response::new(GetNodeStateResponse {
             id: self.id,
-            leaf_set: leaf
+            leaf_set: self
+                .leaf
+                .read()
+                .await
                 .get_set()
                 .iter()
                 .map(|e| LeafSetEntry {
@@ -45,6 +49,7 @@ impl NodeService for super::node::Node {
         &self,
         request: Request<JoinRequest>,
     ) -> std::result::Result<Response<JoinResponse>, Status> {
+        info!("#{:x}: Got request for join", self.id);
         self.block_until_connected().await;
 
         let req = request.into_inner();
@@ -54,67 +59,54 @@ impl NodeService for super::node::Node {
             leaf.get(req.id).clone()
         };
 
-        if let Some(conn) = conn {
-            if conn.info.id != self.id {
-                // Forward to node in leaf set
-                return conn.client.unwrap().join(Request::new(req.clone())).await;
+        match conn {
+            Some(conn) => {
+                // Route using leaf set
+
+                if conn.info.id != self.id {
+                    // Forward to neighbor in leaf set
+                    return conn.client.unwrap().join(Request::new(req)).await;
+                }
+                // Current node is closest previous to joining node
+
+                let leaf = self.leaf.read().await;
+                let leaf_set = {
+                    let set = leaf.get_set();
+                    // Remove first element if leaf set is full
+                    if leaf.is_full() { &set[1..] } else { &set[..] }
+                        .iter()
+                        .map(|e| LeafSetEntry {
+                            id: e.value.info.id.clone(),
+                            pub_addr: e.value.info.pub_addr.clone(),
+                        })
+                        .collect()
+                };
+
+                Ok(Response::new(JoinResponse {
+                    id: self.id,
+                    pub_addr: self.pub_addr.clone(),
+                    leaf_set,
+                }))
             }
-            // Current node is previous to joining node
-            let mut leaf = self.leaf.write().await;
-
-            // Construct joining node's leaf set
-            let mut leaf_set: Vec<LeafSetEntry> = leaf
-                .get_set()
-                .iter()
-                .map(|e| LeafSetEntry {
-                    id: e.value.info.id.clone(),
-                    pub_addr: e.value.info.pub_addr.clone(),
-                })
-                .collect();
-
-            // Remove the first node connection
-            if leaf.is_full() {
-                leaf_set.remove(leaf.get_first_index().unwrap());
+            None => {
+                // Route using routing table
+                let mut client = {
+                    let table = self.table.read().await;
+                    let info = table.route(req.id, 0)?;
+                    NodeServiceClient::connect(info.pub_addr.clone())
+                        .await
+                        .unwrap()
+                };
+                client.join(Request::new(req)).await
             }
-
-            // Insert as neighbor
-            leaf.insert(
-                req.id,
-                NodeConnection {
-                    info: NodeInfo {
-                        id: req.id,
-                        pub_addr: req.pub_addr.clone(),
-                    },
-                    client: Some(
-                        NodeServiceClient::connect(req.pub_addr.clone())
-                            .await
-                            .unwrap(),
-                    ),
-                },
-            )?;
-
-            return Ok(Response::new(JoinResponse {
-                id: self.id,
-                pub_addr: self.pub_addr.clone(),
-                leaf_set,
-            }));
         }
-
-        // Forward request using routing table
-        let mut client = {
-            let table = self.table.read().await;
-            let info = table.route(req.id, 0)?;
-            NodeServiceClient::connect(info.pub_addr.clone())
-                .await
-                .unwrap()
-        };
-        client.join(Request::new(req.clone())).await
     }
 
     async fn leave(
         &self,
         request: Request<LeaveRequest>,
     ) -> std::result::Result<Response<()>, Status> {
+        info!("#{:x}: Got request for leave", self.id);
         self.block_until_connected().await;
 
         todo!()
@@ -124,6 +116,7 @@ impl NodeService for super::node::Node {
         &self,
         request: Request<QueryRequest>,
     ) -> std::result::Result<Response<QueryResponse>, Status> {
+        info!("#{:x}: Got request for query", self.id);
         self.block_until_connected().await;
 
         let req = request.into_inner();
@@ -136,7 +129,7 @@ impl NodeService for super::node::Node {
         if let Some(conn) = conn {
             if conn.info.id != self.id {
                 // Forward request using leaf set
-                return conn.client.unwrap().query(Request::new(req.clone())).await;
+                return conn.client.unwrap().query(Request::new(req)).await;
             }
 
             // Node is the owner of key
@@ -158,44 +151,33 @@ impl NodeService for super::node::Node {
         &self,
         request: Request<UpdateNeighborsRequest>,
     ) -> std::result::Result<Response<()>, Status> {
+        info!("#{:x}: Got request for update_neighbors", self.id);
         self.block_until_connected().await;
 
         let req = request.into_inner();
 
-        let conn = {
-            let leaf = self.leaf.read().await;
-            leaf.get(req.id).clone()
-        };
+        let mut leaf = self.leaf.write().await;
 
-        if let Some(conn) = conn {
-            if conn.info.id != req.id {
-                let mut leaf = self.leaf.write().await;
-
-                // Insert as neighbor
-                leaf.insert(
-                    req.id,
-                    NodeConnection {
-                        info: NodeInfo {
-                            id: req.id,
-                            pub_addr: req.pub_addr.clone(),
-                        },
-                        client: Some(
-                            NodeServiceClient::connect(req.pub_addr.clone())
-                                .await
-                                .unwrap(),
-                        ),
-                    },
-                )?;
-
-                println!(
-                    "Node #{} updated leaf set: {:?}",
-                    self.id,
-                    leaf.get_set()
-                        .iter()
-                        .map(|e| e.key.clone())
-                        .collect::<Vec<u64>>()
-                );
+        if let Some(conn) = leaf.get(req.id) {
+            if conn.info.id == self.id {
+                // Is closest previous neighbor
             }
+
+            // Register as neighbor
+            leaf.insert(
+                req.id,
+                NodeConnection {
+                    info: NodeInfo {
+                        id: req.id,
+                        pub_addr: req.pub_addr.clone(),
+                    },
+                    client: Some(
+                        NodeServiceClient::connect(req.pub_addr.clone())
+                            .await
+                            .unwrap(),
+                    ),
+                },
+            )?;
         }
 
         Ok(Response::new(()))

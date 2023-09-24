@@ -84,7 +84,7 @@ impl Node {
         let addr = format!("0.0.0.0:{}", port);
 
         let id = Sha256Hasher::hash_once(pub_addr.as_bytes());
-        info!("Registering node as {} = #{:x}", id, id);
+        info!("#{:x}: Registered node", id);
 
         Ok(Node {
             id,
@@ -112,7 +112,7 @@ impl Node {
     /// An empty Result.
     ///
     pub async fn bootstrap_and_serve(self, bootstrap_addr: Option<&str>) -> Result<()> {
-        info!("Initializing #{:x} on {}", self.id, self.pub_addr);
+        info!("#{:x}: Initializing node on {}", self.id, self.pub_addr);
 
         if let Some(bootstrap_addr) = bootstrap_addr {
             tokio::spawn(Self::connect_to_network(
@@ -124,9 +124,9 @@ impl Node {
                 bootstrap_addr.to_string(),
             ));
         } else {
-            info!("Initializing network");
+            info!("#{:x}: Initializing network", self.id);
             let _ = self.is_connected.lock().await;
-            info!("Connected to network");
+            info!("#{:x}: Connected to network", self.id);
         }
 
         let addr = self.addr.clone();
@@ -147,7 +147,7 @@ impl Node {
     ) -> Result<()> {
         let _ = is_connected.lock().await;
 
-        info!("Connecting to network through #{:x}", id);
+        info!("#{:x}: Connecting to network", id);
 
         let mut client = NodeServiceClient::connect(bootstrap_addr.to_owned()).await?;
         let join_response = client
@@ -157,16 +157,9 @@ impl Node {
             })
             .await?
             .into_inner();
-        println!(
-            "Node #{} join_response: {:?}",
-            id,
-            join_response
-                .leaf_set
-                .iter()
-                .map(|e| e.id)
-                .collect::<Vec<u64>>()
-        );
 
+        // Update leaf set
+        info!("#{:x}: Updating leaf set", id);
         let mut leaf = leaf.write().await;
         for entry in join_response.leaf_set {
             let mut client = NodeServiceClient::connect(entry.pub_addr.clone()).await?;
@@ -181,17 +174,9 @@ impl Node {
                 NodeConnection::new(entry.id, &entry.pub_addr, Some(client)),
             )?;
         }
+        info!("#{:x}: Updated leaf set", id);
 
-        println!(
-            "Node #{} updated leaf set: {:?}",
-            id,
-            leaf.get_set()
-                .iter()
-                .map(|e| e.key.clone())
-                .collect::<Vec<u64>>()
-        );
-
-        info!("Connected to network");
+        info!("#{:x}: Connected to network", id);
 
         Ok(())
     }
