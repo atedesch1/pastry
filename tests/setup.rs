@@ -6,8 +6,10 @@ use pastry::{
     rpc::node::node_service_client::NodeServiceClient,
 };
 use rand::Rng;
+use tokio::task::JoinHandle;
 use tonic::transport::Channel;
 
+#[derive(Clone)]
 pub struct NetworkConfiguration {
     pub num_nodes: u32,
     pub pastry_conf: PastryConfig,
@@ -23,9 +25,15 @@ impl fmt::Display for NetworkConfiguration {
     }
 }
 
+#[derive(Debug)]
+pub struct NetworkNode {
+    pub info: NodeInfo,
+    handle: JoinHandle<Result<()>>,
+}
+
 pub struct Network {
     pub conf: NetworkConfiguration,
-    pub nodes: Vec<NodeInfo>,
+    pub nodes: Vec<NetworkNode>,
 }
 
 impl fmt::Display for Network {
@@ -33,7 +41,7 @@ impl fmt::Display for Network {
         write!(f, "{}", self.conf)?;
         write!(f, "Nodes: [\n")?;
         for node in &self.nodes {
-            write!(f, "(#{:x}: address={})\n", node.id, node.pub_addr)?;
+            write!(f, "(#{:x}: address={})\n", node.info.id, node.info.pub_addr)?;
         }
         write!(f, "]")?;
         Ok(())
@@ -51,7 +59,7 @@ impl fmt::Display for Network {
 /// A Result containing the network configuration and all node address sorted by ID.
 ///
 pub async fn setup_network(conf: NetworkConfiguration) -> Result<Network> {
-    let mut nodes: Vec<NodeInfo> = Vec::new();
+    let mut nodes: Vec<NetworkNode> = Vec::new();
     let start_port = 50000;
 
     for i in 0..conf.num_nodes {
@@ -62,20 +70,26 @@ pub async fn setup_network(conf: NetworkConfiguration) -> Result<Network> {
             None
         } else {
             let random_index = rand::thread_rng().gen_range(0..nodes.len());
-            Some(nodes[random_index].pub_addr.clone())
+            Some(nodes[random_index].info.pub_addr.clone())
         };
 
-        nodes.push(NodeInfo {
+        let info = NodeInfo {
             id: node.id,
             pub_addr: node.pub_addr.clone(),
-        });
+        };
 
-        tokio::spawn(async move { node.bootstrap_and_serve(bootstrap_addr.as_deref()).await });
+        let handle =
+            tokio::spawn(async move { node.bootstrap_and_serve(bootstrap_addr.as_deref()).await });
 
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        nodes.push(NetworkNode { info, handle });
+
+        tokio::time::sleep(std::time::Duration::from_millis(
+            2 * conf.pastry_conf.leaf_set_k as u64 * 100,
+        ))
+        .await;
     }
 
-    nodes.sort_by_key(|f| f.id);
+    nodes.sort_by_key(|f| f.info.id);
 
     let network = Network { conf, nodes };
 
@@ -97,7 +111,7 @@ pub async fn setup_network(conf: NetworkConfiguration) -> Result<Network> {
 pub async fn get_random_client(network: &Network) -> Result<NodeServiceClient<Channel>> {
     let random_index = rand::thread_rng().gen_range(0..network.nodes.len());
     let node = &network.nodes[random_index];
-    let client = NodeServiceClient::connect(node.pub_addr.clone()).await?;
+    let client = NodeServiceClient::connect(node.info.pub_addr.clone()).await?;
 
     Ok(client)
 }

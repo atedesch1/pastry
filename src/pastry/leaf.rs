@@ -1,3 +1,5 @@
+use log::info;
+
 use crate::error::{Error, Result};
 use std::vec;
 
@@ -98,6 +100,15 @@ impl<T: Clone> LeafSet<T> {
             } else {
                 self.get_first_index().unwrap()
             };
+
+            let id = self.set[self.node_idx].key;
+
+            if key > id && replaced_index < self.node_idx {
+                self.node_idx -= 1;
+            } else if key < id && replaced_index > self.node_idx {
+                self.node_idx += 1;
+            }
+
             self.set[replaced_index] = new_pair;
 
             self.set.sort_by_key(|e| e.key);
@@ -162,6 +173,34 @@ impl<T: Clone> LeafSet<T> {
     pub fn get(&self, key: u64) -> Option<T> {
         self.find_responsible(key)
             .map(|idx| self.set[idx].value.clone())
+    }
+
+    /// Gets right neighbor.
+    ///
+    /// # Returns
+    ///
+    /// An Option containing the right neighbor of leaf set owner, or None if it has none.
+    ///
+    pub fn get_right_neighbor(&self) -> Option<T> {
+        let idx = (self.node_idx + 1) % self.set.len();
+        match idx == self.node_idx {
+            true => None,
+            false => Some(self.set[idx].value.clone()),
+        }
+    }
+
+    /// Gets left neighbor.
+    ///
+    /// # Returns
+    ///
+    /// An Option containing the left neighbor of leaf set owner, or None if it has none.
+    ///
+    pub fn get_left_neighbor(&self) -> Option<T> {
+        let idx = (self.set.len() + self.node_idx - 1) % self.set.len();
+        match idx == self.node_idx {
+            true => None,
+            false => Some(self.set[idx].value.clone()),
+        }
     }
 
     pub fn get_first_index(&self) -> Option<usize> {
@@ -231,7 +270,7 @@ impl<T: Clone> LeafSet<T> {
         Ok(if last_index > self.node_idx {
             self.node_idx <= idx && idx <= last_index
         } else {
-            (self.node_idx <= idx && idx < self.set.len()) || (idx <= last_index)
+            (self.node_idx <= idx) || (idx <= last_index)
         })
     }
 }
@@ -308,6 +347,14 @@ mod tests {
         assert_eq!(set_to_vec(&leaf), vec![0, 1, 2, 6, 8]);
         leaf.insert(7, None)?;
         assert_eq!(set_to_vec(&leaf), vec![0, 1, 2, 7, 8]);
+
+        let mut leaf = leafset_from_vec(k, 4, vec![0, 1, 2, 3, 4]);
+        leaf.insert(5, None)?;
+        assert_eq!(set_to_vec(&leaf), vec![0, 2, 3, 4, 5]);
+
+        let mut leaf = leafset_from_vec(k, 3, vec![1, 3, 4, 5, 6]);
+        leaf.insert(2, None)?;
+        assert_eq!(set_to_vec(&leaf), vec![1, 2, 3, 4, 5]);
 
         Ok(())
     }

@@ -71,10 +71,14 @@ impl NodeService for super::node::Node {
 
                 let leaf = self.leaf.read().await;
                 let leaf_set = {
-                    let set = leaf.get_set();
+                    let mut set = leaf.get_set();
+
                     // Remove first element if leaf set is full
-                    if leaf.is_full() { &set[1..] } else { &set[..] }
-                        .iter()
+                    if leaf.is_full() {
+                        set.remove(leaf.get_first_index().unwrap());
+                    }
+
+                    set.iter()
                         .map(|e| LeafSetEntry {
                             id: e.value.info.id.clone(),
                             pub_addr: e.value.info.pub_addr.clone(),
@@ -90,14 +94,21 @@ impl NodeService for super::node::Node {
             }
             None => {
                 // Route using routing table
-                let mut client = {
-                    let table = self.table.read().await;
-                    let info = table.route(req.id, 0)?;
-                    NodeServiceClient::connect(info.pub_addr.clone())
-                        .await
-                        .unwrap()
+                // let mut client = {
+                //     let table = self.table.read().await;
+                //     let info = table.route(req.id, 0)?;
+                //     NodeServiceClient::connect(info.pub_addr.clone())
+                //         .await
+                //         .unwrap()
+                // };
+                // client.join(Request::new(req)).await
+
+                // Remove after routing table is implemented
+                let conn = {
+                    let leaf = self.leaf.read().await;
+                    leaf.get_right_neighbor().clone()
                 };
-                client.join(Request::new(req)).await
+                conn.unwrap().client.unwrap().join(Request::new(req)).await
             }
         }
     }
@@ -137,14 +148,21 @@ impl NodeService for super::node::Node {
         }
 
         // Forward request using routing table
-        let mut client = {
-            let table = self.table.read().await;
-            let info = table.route(req.key, 0)?;
-            NodeServiceClient::connect(info.pub_addr.clone())
-                .await
-                .unwrap()
+        // let mut client = {
+        //     let table = self.table.read().await;
+        //     let info = table.route(req.key, 0)?;
+        //     NodeServiceClient::connect(info.pub_addr.clone())
+        //         .await
+        //         .unwrap()
+        // };
+        // client.query(Request::new(req)).await
+
+        // Remove after routing table is implemented
+        let conn = {
+            let leaf = self.leaf.read().await;
+            leaf.get_right_neighbor().clone()
         };
-        client.query(Request::new(req.clone())).await
+        conn.unwrap().client.unwrap().query(Request::new(req)).await
     }
 
     async fn update_neighbors(
