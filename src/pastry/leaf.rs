@@ -1,20 +1,7 @@
-use log::info;
-
 use crate::error::{Error, Result};
 use std::{fmt::Display, vec};
 
-/// A key-value pair data structure used in LeafSet
-#[derive(Debug, Clone, PartialEq)]
-pub struct KeyValuePair<T, U> {
-    pub key: T,
-    pub value: U,
-}
-
-impl<T, U> KeyValuePair<T, U> {
-    fn new(key: T, value: U) -> Self {
-        Self { key, value }
-    }
-}
+use super::shared::KeyValuePair;
 
 /// LeafSet is a data structure used in the Pastry routing algorithm. The leaf set is a data
 /// structure that holds connections to the closests neighbors to a node.
