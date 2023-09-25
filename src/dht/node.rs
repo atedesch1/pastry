@@ -15,18 +15,12 @@ use crate::{
         node_service_client::NodeServiceClient, node_service_server::NodeServiceServer,
         JoinRequest, UpdateNeighborsRequest,
     },
-    util::HasID,
 };
 
 #[derive(Debug, Clone)]
 pub struct NodeInfo {
     pub id: u64,
     pub pub_addr: String,
-}
-impl HasID<u64> for NodeInfo {
-    fn get_id(&self) -> u64 {
-        self.id
-    }
 }
 
 #[derive(Debug, Clone)]
