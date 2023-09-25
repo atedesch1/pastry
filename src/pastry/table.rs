@@ -38,6 +38,20 @@ impl<T: Clone> RoutingTable<T> {
         Ok(())
     }
 
+    /// Removes a value from the table if it exists.
+    pub fn remove(&mut self, id: u64) -> Result<()> {
+        for i in 0..U64_HEX_NUM_OF_DIGITS {
+            let table_digit = get_nth_digit_in_u64_hex(self.id, i)?;
+            let id_digit = get_nth_digit_in_u64_hex(id, i)?;
+            if table_digit != id_digit {
+                self.table[i as usize][id_digit as usize] = None;
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
     /// Returns the next node to route the request to in the Pastry algorithm.
     pub fn route(&self, key: u64, min_matched_digits: u32) -> Result<T> {
         for i in min_matched_digits..U64_HEX_NUM_OF_DIGITS {
@@ -96,6 +110,20 @@ mod tests {
         let kv = KeyValuePair::new(0xFEDCBA9400000000, 0xFEDCBA9400000000);
         t.insert(kv.key, kv.value)?;
         assert_eq!(t.table[7][4], Some(kv));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_remove() -> Result<()> {
+        let mut t = setup();
+        let kv1 = KeyValuePair::new(0xFEDCBA0000000000, 0xFEDCBA0000000000);
+        t.insert(kv1.key, kv1.value)?;
+        let kv2 = KeyValuePair::new(0xFEDCBA9400000000, 0xFEDCBA9400000000);
+        t.insert(kv2.key, kv2.value)?;
+
+        t.remove(kv1.key)?;
+        assert_eq!(t.table[6][0], None);
 
         Ok(())
     }
