@@ -1,6 +1,7 @@
 use crate::{
     error::Result,
-    util::{get_distance_between_usigned, get_nth_digit_in_u64_hex, HasID, U64_HEX_NUM_OF_DIGITS},
+    hring::ring::{Ring, Ring64},
+    util::{get_nth_digit_in_u64_hex, HasID, U64_HEX_NUM_OF_DIGITS},
 };
 
 /// A struct for constructing the Pastry's Routing Table data structure.
@@ -31,7 +32,7 @@ where
             let table_digit = get_nth_digit_in_u64_hex(self.id, i)?;
             let id_digit = get_nth_digit_in_u64_hex(id, i)?;
             if table_digit != id_digit {
-                self.table[i as usize][id_digit as usize] = Some(val.clone());
+                self.table[i as usize][id_digit as usize] = Some(val);
                 break;
             }
         }
@@ -55,26 +56,23 @@ where
                     for entry in row {
                         if let Some(e) = entry {
                             if closest.is_none()
-                                || (closest.is_some()
-                                    && get_distance_between_usigned(e.get_id(), self.id)
-                                        < get_distance_between_usigned(
-                                            closest.as_ref().unwrap().get_id(),
-                                            self.id,
-                                        ))
+                                || (Ring64::distance(e.get_id(), self.id)
+                                    < Ring64::distance(closest.as_ref().unwrap().get_id(), self.id))
                             {
                                 closest = entry;
                             }
                         }
                     }
+
                     return closest.clone().ok_or(crate::error::Error::Internal(
-                        "Couldn't find a node to route to.".into(),
+                        "could not find a node to route to.".into(),
                     ));
                 }
             }
         }
 
         Err(crate::error::Error::Internal(
-            "Couldn't find a node to route to.".into(),
+            "could not find a node to route to.".into(),
         ))
     }
 }
