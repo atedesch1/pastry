@@ -1,7 +1,7 @@
 use log::info;
 
 use crate::error::{Error, Result};
-use std::vec;
+use std::{fmt::Display, vec};
 
 /// A key-value pair data structure used in LeafSet
 #[derive(Debug, Clone, PartialEq)]
@@ -23,6 +23,31 @@ pub struct LeafSet<T: Clone> {
     max_size: usize,
     node_idx: usize,
     set: Vec<KeyValuePair<u64, T>>,
+}
+
+impl<T: Clone> Display for LeafSet<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let set_str = {
+            let mut str = String::new();
+            if self.set.len() < self.max_size {
+                str += "-> ";
+                for kv in &self.set {
+                    str += format!("{:x} -> ", kv.key).as_str();
+                }
+            } else {
+                let first_index = self.get_first_index().unwrap();
+                for i in 0..self.max_size {
+                    str +=
+                        format!("{:x}", self.set[(first_index + i) % self.max_size].key).as_str();
+                    if i < self.max_size - 1 {
+                        str += " -> ";
+                    }
+                }
+            }
+            str
+        };
+        write!(f, "Leaf Set: {}\n", set_str)
+    }
 }
 
 impl<T: Clone> LeafSet<T> {
