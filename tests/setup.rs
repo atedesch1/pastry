@@ -28,12 +28,24 @@ impl fmt::Display for NetworkConfiguration {
 #[derive(Debug)]
 pub struct NetworkNode {
     pub info: NodeInfo,
-    handle: JoinHandle<Result<()>>,
+    pub handle: JoinHandle<Result<()>>,
 }
 
 pub struct Network {
     pub conf: NetworkConfiguration,
     pub nodes: Vec<NetworkNode>,
+}
+
+impl Network {
+    pub fn new(conf: NetworkConfiguration, nodes: Vec<NetworkNode>) -> Self {
+        Network { conf, nodes }
+    }
+
+    pub fn shutdown(&self) -> () {
+        for node in &self.nodes {
+            node.handle.abort();
+        }
+    }
 }
 
 impl fmt::Display for Network {
@@ -91,7 +103,7 @@ pub async fn setup_network(conf: NetworkConfiguration) -> Result<Network> {
 
     nodes.sort_by_key(|f| f.info.id);
 
-    let network = Network { conf, nodes };
+    let network = Network::new(conf, nodes);
 
     println!("{}", network);
 
