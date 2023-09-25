@@ -39,12 +39,12 @@ async fn test_join() -> Result<(), Box<dyn std::error::Error>> {
 
     for k in 1..4 {
         for num_of_nodes in 1..8 {
-            let config = NetworkConfiguration {
+            let network = Network::new(NetworkConfiguration {
                 pastry_conf: PastryConfig { leaf_set_k: k },
                 num_nodes: num_of_nodes,
-            };
-
-            let network = setup_network(config.clone()).await?;
+            })
+            .init()
+            .await?;
 
             for (idx, node) in network.nodes.iter().enumerate() {
                 let mut client = NodeServiceClient::connect(node.info.pub_addr.clone()).await?;
@@ -56,7 +56,7 @@ async fn test_join() -> Result<(), Box<dyn std::error::Error>> {
                     .map(|f| f.id)
                     .collect::<Vec<u64>>();
                 let mut neighbors =
-                    get_neighbors(&network.nodes, idx, config.pastry_conf.leaf_set_k)
+                    get_neighbors(&network.nodes, idx, network.conf.pastry_conf.leaf_set_k)
                         .iter()
                         .map(|f| f.info.id)
                         .collect::<Vec<u64>>();

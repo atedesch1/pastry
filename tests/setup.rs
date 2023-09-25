@@ -37,11 +37,85 @@ pub struct Network {
 }
 
 impl Network {
-    pub fn new(conf: NetworkConfiguration, nodes: Vec<NetworkNode>) -> Self {
-        Network { conf, nodes }
+    /// Creates a Pastry Network with the provided configuration.
+    ///
+    /// # Arguments
+    ///
+    /// * `conf` - Pastry network parameters.
+    ///
+    /// # Returns
+    ///
+    /// An empty network.
+    ///
+    pub fn new(conf: NetworkConfiguration) -> Self {
+        Network {
+            conf,
+            nodes: Vec::new(),
+        }
     }
 
-    pub fn shutdown(&self) -> () {
+    /// Initializes the Pastry Network, filling the vector of nodes with connections to the network
+    /// nodes.
+    ///
+    pub async fn init(mut self) -> Result<Self> {
+        let start_port = 50000;
+
+        for i in 0..self.conf.num_nodes {
+            let port = start_port + i;
+            let node = Node::new(self.conf.pastry_conf.clone(), "0.0.0.0", &port.to_string())?;
+
+            let bootstrap_addr = if self.nodes.is_empty() {
+                None
+            } else {
+                let random_index = rand::thread_rng().gen_range(0..self.nodes.len());
+                Some(self.nodes[random_index].info.pub_addr.clone())
+            };
+
+            let info = NodeInfo {
+                id: node.id,
+                pub_addr: node.pub_addr.clone(),
+            };
+
+            let handle =
+                tokio::spawn(
+                    async move { node.bootstrap_and_serve(bootstrap_addr.as_deref()).await },
+                );
+
+            self.nodes.push(NetworkNode { info, handle });
+
+            tokio::time::sleep(std::time::Duration::from_millis(
+                2 * self.conf.pastry_conf.leaf_set_k as u64 * 100,
+            ))
+            .await;
+        }
+
+        self.nodes.sort_by_key(|f| f.info.id);
+
+        println!("Created network: {}", self);
+
+        Ok(self)
+    }
+
+    /// Gets a connection to a random node in the network.
+    ///
+    /// # Returns
+    ///
+    /// A Result containing a client connection to a random node in the network and the node
+    /// information.
+    ///
+    pub async fn get_random_node_connection(
+        &self,
+    ) -> Result<(NodeInfo, NodeServiceClient<Channel>)> {
+        let random_index = rand::thread_rng().gen_range(0..self.nodes.len());
+        let node = &self.nodes[random_index];
+        let client = NodeServiceClient::connect(node.info.pub_addr.clone()).await?;
+
+        Ok((node.info.clone(), client))
+    }
+
+    /// Shuts down the network, consuming the network.
+    ///
+    pub fn shutdown(self) -> () {
         for node in &self.nodes {
             node.handle.abort();
         }
@@ -58,72 +132,4 @@ impl fmt::Display for Network {
         write!(f, "]")?;
         Ok(())
     }
-}
-
-/// Setups a Pastry Network with the provided configuration.
-///
-/// # Arguments
-///
-/// * `conf` - Pastry network parameters.
-///
-/// # Returns
-///
-/// A Result containing the network configuration and all node address sorted by ID.
-///
-pub async fn setup_network(conf: NetworkConfiguration) -> Result<Network> {
-    let mut nodes: Vec<NetworkNode> = Vec::new();
-    let start_port = 50000;
-
-    for i in 0..conf.num_nodes {
-        let port = start_port + i;
-        let node = Node::new(conf.pastry_conf.clone(), "0.0.0.0", &port.to_string())?;
-
-        let bootstrap_addr = if nodes.is_empty() {
-            None
-        } else {
-            let random_index = rand::thread_rng().gen_range(0..nodes.len());
-            Some(nodes[random_index].info.pub_addr.clone())
-        };
-
-        let info = NodeInfo {
-            id: node.id,
-            pub_addr: node.pub_addr.clone(),
-        };
-
-        let handle =
-            tokio::spawn(async move { node.bootstrap_and_serve(bootstrap_addr.as_deref()).await });
-
-        nodes.push(NetworkNode { info, handle });
-
-        tokio::time::sleep(std::time::Duration::from_millis(
-            2 * conf.pastry_conf.leaf_set_k as u64 * 100,
-        ))
-        .await;
-    }
-
-    nodes.sort_by_key(|f| f.info.id);
-
-    let network = Network::new(conf, nodes);
-
-    println!("{}", network);
-
-    Ok(network)
-}
-
-/// Connects to a random node in the network.
-///
-/// # Arguments
-///
-/// * `network` - A Pastry network.
-///
-/// # Returns
-///
-/// A Result containing a client connection to a random node in the network.
-///
-pub async fn get_random_client(network: &Network) -> Result<NodeServiceClient<Channel>> {
-    let random_index = rand::thread_rng().gen_range(0..network.nodes.len());
-    let node = &network.nodes[random_index];
-    let client = NodeServiceClient::connect(node.info.pub_addr.clone()).await?;
-
-    Ok(client)
 }
