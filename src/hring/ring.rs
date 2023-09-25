@@ -9,7 +9,7 @@ pub trait Ring<T>
 where
     T: Ord + Add + Sub<Output = T>,
 {
-    /// Computes the clockwise distance from 'a' to 'b'.
+    /// Computes the counter clockwise distance from 'a' to 'b'.
     fn counter_clockwise_distance(a: T, b: T) -> T;
 
     /// Computes the smallest distance between 'a' and 'b'.
