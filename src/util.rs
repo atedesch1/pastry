@@ -30,3 +30,21 @@ where
         b - a
     }
 }
+
+mod tests {
+    use super::get_nth_digit_in_u64_hex;
+    use super::Result;
+
+    #[test]
+    fn test_get_nth_digit_in_u64_hex() -> Result<()> {
+        assert_eq!(get_nth_digit_in_u64_hex(0xFEDCBA9876543210, 0)?, 0xF);
+        assert_eq!(get_nth_digit_in_u64_hex(0xFEDCBA9876543210, 9)?, 0x6);
+        assert_eq!(get_nth_digit_in_u64_hex(0xFEDCBA9876543210, 15)?, 0x0);
+        assert_eq!(get_nth_digit_in_u64_hex(0xEDCBA9876543210, 0)?, 0x0);
+        assert_eq!(get_nth_digit_in_u64_hex(0xDCBA9876543210, 0)?, 0x0);
+        assert_eq!(get_nth_digit_in_u64_hex(0xDCBA9876543210, 1)?, 0x0);
+        assert_eq!(get_nth_digit_in_u64_hex(0xDCBA9876543210, 2)?, 0xD);
+
+        Ok(())
+    }
+}

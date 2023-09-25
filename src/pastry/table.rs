@@ -80,10 +80,9 @@ where
 }
 
 mod tests {
-    use super::get_nth_digit_in_u64_hex;
     use super::HasID;
+    use super::Result;
     use super::RoutingTable;
-    use crate::error::Result;
 
     #[derive(Clone, Debug, PartialEq)]
     struct NodePackage {
@@ -100,16 +99,6 @@ mod tests {
         let id: u64 = 0xFEDCBA9876543210;
 
         RoutingTable::new(id)
-    }
-
-    #[test]
-    fn test_get_nth_digit_in_u64_hex() -> Result<()> {
-        let t = setup();
-        assert_eq!(get_nth_digit_in_u64_hex(t.id, 0)?, 0xF);
-        assert_eq!(get_nth_digit_in_u64_hex(t.id, 9)?, 0x6);
-        assert_eq!(get_nth_digit_in_u64_hex(t.id, 15)?, 0x0);
-
-        Ok(())
     }
 
     #[test]
