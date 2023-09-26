@@ -176,7 +176,7 @@ impl<T: Clone> LeafSet<T> {
     ///
     /// # Arguments
     ///
-    /// * `key` - The main key for the LeafSet.
+    /// * `key` - The key being routed.
     ///
     /// # Returns
     ///
