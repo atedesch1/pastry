@@ -52,7 +52,7 @@ impl NodeService for super::node::Node {
         info!("#{:x}: Got request for join", self.id);
         self.block_until_connected().await;
 
-        let req = request.into_inner();
+        let req = request.get_ref();
 
         let conn = {
             let leaf = self.leaf.read().await;
@@ -65,7 +65,7 @@ impl NodeService for super::node::Node {
 
                 if conn.info.id != self.id {
                     // Forward to neighbor in leaf set
-                    return conn.client.unwrap().join(Request::new(req)).await;
+                    return conn.client.unwrap().join(request).await;
                 }
                 // Current node is closest previous to joining node
 
@@ -108,7 +108,7 @@ impl NodeService for super::node::Node {
                     let leaf = self.leaf.read().await;
                     leaf.get_right_neighbor().clone()
                 };
-                conn.unwrap().client.unwrap().join(Request::new(req)).await
+                conn.unwrap().client.unwrap().join(request).await
             }
         }
     }
@@ -130,7 +130,7 @@ impl NodeService for super::node::Node {
         info!("#{:x}: Got request for query", self.id);
         self.block_until_connected().await;
 
-        let req = request.into_inner();
+        let req = request.get_ref();
 
         let conn = {
             let leaf = self.leaf.read().await;
@@ -140,7 +140,7 @@ impl NodeService for super::node::Node {
         if let Some(conn) = conn {
             if conn.info.id != self.id {
                 // Forward request using leaf set
-                return conn.client.unwrap().query(Request::new(req)).await;
+                return conn.client.unwrap().query(request).await;
             }
 
             // Node is the owner of key
@@ -162,7 +162,7 @@ impl NodeService for super::node::Node {
             let leaf = self.leaf.read().await;
             leaf.get_right_neighbor().clone()
         };
-        conn.unwrap().client.unwrap().query(Request::new(req)).await
+        conn.unwrap().client.unwrap().query(request).await
     }
 
     async fn update_neighbors(
@@ -172,7 +172,7 @@ impl NodeService for super::node::Node {
         info!("#{:x}: Got request for update_neighbors", self.id);
         self.block_until_connected().await;
 
-        let req = request.into_inner();
+        let req = request.get_ref();
 
         let mut leaf = self.leaf.write().await;
 
