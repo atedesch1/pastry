@@ -107,7 +107,7 @@ impl Network {
     ) -> Result<(NodeInfo, NodeServiceClient<Channel>)> {
         let random_index = rand::thread_rng().gen_range(0..self.nodes.len());
         let node = &self.nodes[random_index];
-        let client = NodeServiceClient::connect(node.info.pub_addr.clone()).await?;
+        let client = Node::connect_with_retry(&node.info.pub_addr).await?;
 
         Ok((node.info.clone(), client))
     }
