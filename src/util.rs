@@ -4,6 +4,29 @@ pub const HEX_NUM_OF_BITS_PER_DIGIT: u32 = 4;
 pub const U64_HEX_NUM_OF_DIGITS: u32 = u64::BITS / HEX_NUM_OF_BITS_PER_DIGIT as u32;
 pub const HEX_DIGIT_MASK: u32 = 0xF;
 
+/// Gets the first n hexadecimal digits from a u64.
+pub fn get_first_digits_in_u64_hex(num: u64, n: usize) -> Result<u64> {
+    if n > 16 {
+        return Err(crate::error::Error::Internal(
+            "There are only 16 digits in a hexadecimal number.".into(),
+        ));
+    }
+
+    if n == 0 {
+        return Err(crate::error::Error::Internal(
+            "Cannot get first 0 digits from a hexadecimal number.".into(),
+        ));
+    }
+
+    let mut mask: u64 = 0x0;
+    for _ in 0..n {
+        mask = mask << HEX_NUM_OF_BITS_PER_DIGIT;
+        mask += HEX_DIGIT_MASK as u64;
+    }
+
+    Ok((num >> (u64::BITS - n as u32 * HEX_NUM_OF_BITS_PER_DIGIT)) & mask)
+}
+
 /// Gets the nth hexadecimal digit from a u64.
 pub fn get_nth_digit_in_u64_hex(num: u64, n: usize) -> Result<u32> {
     if n >= 16 {
@@ -38,8 +61,7 @@ where
 }
 
 mod tests {
-    use super::get_nth_digit_in_u64_hex;
-    use super::Result;
+    use super::*;
 
     #[test]
     fn test_get_nth_digit_in_u64_hex() -> Result<()> {
@@ -50,6 +72,19 @@ mod tests {
         assert_eq!(get_nth_digit_in_u64_hex(0xDCBA9876543210, 0)?, 0x0);
         assert_eq!(get_nth_digit_in_u64_hex(0xDCBA9876543210, 1)?, 0x0);
         assert_eq!(get_nth_digit_in_u64_hex(0xDCBA9876543210, 2)?, 0xD);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_first_n_digits_in_u64_hex() -> Result<()> {
+        assert_eq!(get_first_digits_in_u64_hex(0xFEDCBA9876543210, 1)?, 0xF);
+        assert_eq!(get_first_digits_in_u64_hex(0xFEDCBA9876543210, 2)?, 0xFE);
+        assert_eq!(get_first_digits_in_u64_hex(0xFEDCBA9876543210, 3)?, 0xFED);
+        assert_eq!(
+            get_first_digits_in_u64_hex(0xFEDCBA9876543210, 16)?,
+            0xFEDCBA9876543210
+        );
 
         Ok(())
     }
