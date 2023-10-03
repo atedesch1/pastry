@@ -231,8 +231,8 @@ impl<T: Clone> LeafSet<T> {
         Some((self.node_idx + self.max_size / 2) % self.max_size)
     }
 
-    pub fn get_set(&self) -> Vec<KeyValuePair<u64, T>> {
-        self.set.clone()
+    pub fn get_set(&self) -> &Vec<KeyValuePair<u64, T>> {
+        &self.set
     }
 
     pub fn get_node_index(&self) -> usize {
@@ -288,9 +288,8 @@ impl<T: Clone> LeafSet<T> {
 }
 
 mod tests {
+    use super::*;
     use crate::error::{Error, Result};
-
-    use super::{KeyValuePair, LeafSet};
 
     fn leafset_from_vec(k: usize, initial: u64, v: Vec<u64>) -> LeafSet<Option<()>> {
         let mut leaf: LeafSet<Option<()>> = LeafSet::new(k, initial, None).unwrap();
