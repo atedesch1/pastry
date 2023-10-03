@@ -1,7 +1,9 @@
+use core::fmt;
+
 use crate::{
     error::Result,
     hring::ring::{Ring, Ring64},
-    util::{get_nth_digit_in_u64_hex, U64_HEX_NUM_OF_DIGITS},
+    util::{self, get_nth_digit_in_u64_hex, HEX_BASE, U64_HEX_NUM_OF_DIGITS},
 };
 
 use super::shared::KeyValuePair;
@@ -35,7 +37,7 @@ impl<T: Clone> RoutingTable<T> {
             if table_digit != id_digit {
                 while self.table.len() < i + 1 {
                     // Push new rows to allow for new entry
-                    self.table.push(vec![None; 0xF]);
+                    self.table.push(vec![None; HEX_BASE as usize]);
                 }
 
                 self.table[i][id_digit as usize] = Some(new_pair);
@@ -104,6 +106,39 @@ impl<T: Clone> RoutingTable<T> {
     /// Returns an Option containing a row of the routing table if it exists.
     pub fn get_row(&self, index: usize) -> Option<&Vec<Option<KeyValuePair<u64, T>>>> {
         self.table.get(index)
+    }
+}
+
+impl<T> fmt::Display for RoutingTable<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Header
+        write!(f, "{:016}|", "Matched")?;
+        for i in 0..16 {
+            write!(f, "{:016}|", format!("{:X}", i))?;
+        }
+        writeln!(f)?;
+
+        // Content
+        for (i, row) in self.table.iter().enumerate() {
+            let mut matched = "*".to_string();
+            if i > 0 {
+                matched = format!(
+                    "{:X}",
+                    util::get_first_digits_in_u64_hex(self.id, i).unwrap()
+                ) + &matched;
+            }
+
+            write!(f, "{:016}|", matched)?;
+
+            for cell in row {
+                match cell {
+                    Some(kv) => write!(f, "{:016X}|", kv.key)?,
+                    None => write!(f, "{:016}|", " ")?,
+                }
+            }
+            writeln!(f)?;
+        }
+        Ok(())
     }
 }
 

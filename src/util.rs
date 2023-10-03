@@ -1,5 +1,6 @@
 use crate::error::Result;
 
+pub const HEX_BASE: u32 = 16;
 pub const HEX_NUM_OF_BITS_PER_DIGIT: u32 = 4;
 pub const U64_HEX_NUM_OF_DIGITS: u32 = u64::BITS / HEX_NUM_OF_BITS_PER_DIGIT as u32;
 pub const HEX_DIGIT_MASK: u32 = 0xF;
