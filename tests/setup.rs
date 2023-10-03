@@ -126,7 +126,11 @@ impl fmt::Display for Network {
         write!(f, "{}", self.conf)?;
         write!(f, "Nodes: [\n")?;
         for node in &self.nodes {
-            write!(f, "(#{:x}: address={})\n", node.info.id, node.info.pub_addr)?;
+            write!(
+                f,
+                "(#{:016X}: address={})\n",
+                node.info.id, node.info.pub_addr
+            )?;
         }
         write!(f, "]")?;
         Ok(())
