@@ -12,31 +12,6 @@ pub struct LeafSet<T: Clone> {
     set: Vec<KeyValuePair<u64, T>>,
 }
 
-impl<T: Clone> Display for LeafSet<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let set_str = {
-            let mut str = String::new();
-            if self.set.len() < self.max_size {
-                str += "-> ";
-                for kv in &self.set {
-                    str += format!("{:x} -> ", kv.key).as_str();
-                }
-            } else {
-                let first_index = self.get_first_index().unwrap();
-                for i in 0..self.max_size {
-                    str +=
-                        format!("{:x}", self.set[(first_index + i) % self.max_size].key).as_str();
-                    if i < self.max_size - 1 {
-                        str += " -> ";
-                    }
-                }
-            }
-            str
-        };
-        write!(f, "Leaf Set: {}\n", set_str)
-    }
-}
-
 impl<T: Clone> LeafSet<T> {
     /// Creates a new instance of the LeafSet with the specified parameters.
     ///
@@ -284,6 +259,31 @@ impl<T: Clone> LeafSet<T> {
         } else {
             (self.node_idx <= idx) || (idx <= last_index)
         })
+    }
+}
+
+impl<T: Clone> Display for LeafSet<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let set_str = {
+            let mut str = String::new();
+            if self.set.len() < self.max_size {
+                str += "-> ";
+                for kv in &self.set {
+                    str += format!("{:016X} -> ", kv.key).as_str();
+                }
+            } else {
+                let first_index = self.get_first_index().unwrap();
+                for i in 0..self.max_size {
+                    str += format!("{:016X}", self.set[(first_index + i) % self.max_size].key)
+                        .as_str();
+                    if i < self.max_size - 1 {
+                        str += " -> ";
+                    }
+                }
+            }
+            str
+        };
+        write!(f, "{}", set_str)
     }
 }
 
