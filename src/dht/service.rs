@@ -2,7 +2,7 @@ use log::info;
 use tonic::{Request, Response, Status};
 
 use crate::{
-    dht::node::{NodeConnection, NodeInfo},
+    dht::node::{NodeConnection, NodeInfo, NodeState},
     rpc::node::{
         node_service_client::NodeServiceClient, node_service_server::NodeService,
         GetNodeIdResponse, GetNodeStateResponse, JoinRequest, JoinResponse, LeafSetEntry,
@@ -17,7 +17,6 @@ impl NodeService for super::node::Node {
         _request: Request<()>,
     ) -> std::result::Result<Response<GetNodeIdResponse>, Status> {
         info!("#{:x}: Got request for get_node_id", self.id);
-        self.block_until_connected().await;
 
         Ok(Response::new(GetNodeIdResponse { id: self.id }))
     }
@@ -27,7 +26,7 @@ impl NodeService for super::node::Node {
         _request: Request<()>,
     ) -> std::result::Result<Response<GetNodeStateResponse>, Status> {
         info!("#{:x}: Got request for get_node_state", self.id);
-        self.block_until_connected().await;
+        self.block_until_routing_requests().await;
 
         Ok(Response::new(GetNodeStateResponse {
             id: self.id,
@@ -50,7 +49,7 @@ impl NodeService for super::node::Node {
         request: Request<JoinRequest>,
     ) -> std::result::Result<Response<JoinResponse>, Status> {
         info!("#{:x}: Got request for join", self.id);
-        self.block_until_connected().await;
+        self.block_until_routing_requests().await;
 
         let req = request.get_ref();
 
@@ -118,7 +117,7 @@ impl NodeService for super::node::Node {
         request: Request<LeaveRequest>,
     ) -> std::result::Result<Response<()>, Status> {
         info!("#{:x}: Got request for leave", self.id);
-        self.block_until_connected().await;
+        self.block_until_routing_requests().await;
 
         todo!()
     }
@@ -128,7 +127,7 @@ impl NodeService for super::node::Node {
         request: Request<QueryRequest>,
     ) -> std::result::Result<Response<QueryResponse>, Status> {
         info!("#{:x}: Got request for query", self.id);
-        self.block_until_connected().await;
+        self.block_until_routing_requests().await;
 
         let req = request.get_ref();
 
@@ -170,7 +169,8 @@ impl NodeService for super::node::Node {
         request: Request<UpdateNeighborsRequest>,
     ) -> std::result::Result<Response<()>, Status> {
         info!("#{:x}: Got request for update_neighbors", self.id);
-        self.block_until_connected().await;
+        self.block_until_routing_requests().await;
+        self.change_state(NodeState::UpdatingConnections).await;
 
         let req = request.get_ref();
 
@@ -198,6 +198,7 @@ impl NodeService for super::node::Node {
             )?;
         }
 
+        self.change_state(NodeState::RoutingRequests).await;
         Ok(Response::new(()))
     }
 }
