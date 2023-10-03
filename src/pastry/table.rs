@@ -100,12 +100,15 @@ impl<T: Clone> RoutingTable<T> {
             "could not find a node to route to.".into(),
         ))
     }
+
+    /// Returns an Option containing a row of the routing table if it exists.
+    pub fn get_row(&self, index: usize) -> Option<&Vec<Option<KeyValuePair<u64, T>>>> {
+        self.table.get(index)
+    }
 }
 
 mod tests {
-    use super::KeyValuePair;
-    use super::Result;
-    use super::RoutingTable;
+    use super::*;
 
     fn setup() -> RoutingTable<u64> {
         let id: u64 = 0xFEDCBA9876543210;
