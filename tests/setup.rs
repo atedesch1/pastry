@@ -6,7 +6,7 @@ use pastry::{
     rpc::node::node_service_client::NodeServiceClient,
 };
 use rand::Rng;
-use tokio::task::JoinHandle;
+use tokio::{sync::mpsc, task::JoinHandle};
 use tonic::transport::Channel;
 
 #[derive(Clone)]
@@ -76,17 +76,16 @@ impl Network {
                 pub_addr: node.pub_addr.clone(),
             };
 
-            let handle =
-                tokio::spawn(
-                    async move { node.bootstrap_and_serve(bootstrap_addr.as_deref()).await },
-                );
+            let (tx, mut rx) = mpsc::channel::<bool>(1);
+
+            let handle = tokio::spawn(async move {
+                node.bootstrap_and_serve(bootstrap_addr.as_deref(), Some(tx))
+                    .await
+            });
 
             self.nodes.push(NetworkNode { info, handle });
 
-            tokio::time::sleep(std::time::Duration::from_millis(
-                2 * self.conf.pastry_conf.leaf_set_k as u64 * 100,
-            ))
-            .await;
+            rx.recv().await.unwrap();
         }
 
         self.nodes.sort_by_key(|f| f.info.id);

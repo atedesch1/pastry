@@ -2,11 +2,11 @@ use log::info;
 use tonic::{Request, Response, Status};
 
 use crate::{
-    dht::node::{NodeConnection, NodeInfo, NodeState},
+    dht::node::{Node, NodeConnection, NodeInfo, NodeState},
     rpc::node::{
-        node_service_client::NodeServiceClient, node_service_server::NodeService,
-        GetNodeIdResponse, GetNodeStateResponse, JoinRequest, JoinResponse, LeafSetEntry,
-        LeaveRequest, QueryRequest, QueryResponse, UpdateNeighborsRequest,
+        node_service_server::NodeService, GetNodeIdResponse, GetNodeStateResponse, JoinRequest,
+        JoinResponse, LeafSetEntry, LeaveRequest, QueryRequest, QueryResponse,
+        UpdateNeighborsRequest,
     },
 };
 
@@ -182,6 +182,7 @@ impl NodeService for super::node::Node {
             }
 
             // Register as neighbor
+            let client = Node::connect_with_retry(&req.pub_addr).await?;
             leaf.insert(
                 req.id,
                 NodeConnection {
@@ -189,11 +190,7 @@ impl NodeService for super::node::Node {
                         id: req.id,
                         pub_addr: req.pub_addr.clone(),
                     },
-                    client: Some(
-                        NodeServiceClient::connect(req.pub_addr.clone())
-                            .await
-                            .unwrap(),
-                    ),
+                    client: Some(client),
                 },
             )?;
         }

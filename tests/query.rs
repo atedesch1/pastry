@@ -28,7 +28,7 @@ fn find_responsible(nodes: &Vec<NetworkNode>, key: u64) -> usize {
     position
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_query() -> Result<(), Box<dyn std::error::Error>> {
     // env_logger::Builder::from_default_env()
     //     .filter_level(log::LevelFilter::Debug)

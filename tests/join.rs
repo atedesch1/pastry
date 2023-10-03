@@ -1,4 +1,4 @@
-use pastry::{dht::node::PastryConfig, rpc::node::node_service_client::NodeServiceClient};
+use pastry::dht::node::{Node, PastryConfig};
 
 mod setup;
 mod util;
@@ -31,7 +31,7 @@ fn get_neighbors<T>(vector: &[T], index: usize, k: usize) -> Vec<&T> {
     neighbors
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_join() -> Result<(), Box<dyn std::error::Error>> {
     // env_logger::Builder::from_default_env()
     //     .filter_level(log::LevelFilter::Debug)
@@ -47,7 +47,7 @@ async fn test_join() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
 
             for (idx, node) in network.nodes.iter().enumerate() {
-                let mut client = NodeServiceClient::connect(node.info.pub_addr.clone()).await?;
+                let mut client = Node::connect_with_retry(&node.info.pub_addr).await?;
                 let state = client.get_node_state(Request::new(())).await?.into_inner();
                 let leaf_set = state
                     .leaf_set
