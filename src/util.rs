@@ -15,6 +15,17 @@ pub fn get_nth_digit_in_u64_hex(num: u64, n: usize) -> Result<u32> {
     Ok((num >> (u64::BITS - (n + 1) as u32 * HEX_NUM_OF_BITS_PER_DIGIT)) as u32 & HEX_DIGIT_MASK)
 }
 
+/// Gets the number of matched digits of two u64 numbers.
+pub fn get_num_matched_digits(a: u64, b: u64) -> Result<u32> {
+    for i in 0..U64_HEX_NUM_OF_DIGITS as usize {
+        if get_nth_digit_in_u64_hex(a, i)? != get_nth_digit_in_u64_hex(b, i)? {
+            return Ok(i as u32);
+        }
+    }
+
+    Ok(U64_HEX_NUM_OF_DIGITS - 1)
+}
+
 pub fn get_distance_between_unsigned<T>(a: T, b: T) -> T
 where
     T: PartialOrd + std::ops::Sub<Output = T>,
