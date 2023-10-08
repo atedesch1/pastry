@@ -63,9 +63,9 @@ impl Network {
         let mut num_deployed = 0;
         let mut port = 30000;
         while num_deployed < self.conf.num_nodes {
-            while Self::is_port_in_use(port) {
-                port += 1;
-            }
+            // while Self::is_port_in_use(port) {
+            //     port += 1;
+            // }
 
             let node = Node::new(self.conf.pastry_conf.clone(), "0.0.0.0", &port.to_string())?;
 
@@ -92,6 +92,7 @@ impl Network {
 
             rx.recv().await.unwrap();
             num_deployed += 1;
+            port += 1;
         }
 
         self.nodes.sort_by_key(|f| f.info.id);
