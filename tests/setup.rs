@@ -1,5 +1,7 @@
 use core::fmt;
+use std::net::TcpListener;
 
+use log::error;
 use pastry::{
     dht::node::{Node, NodeInfo, PastryConfig},
     error::Result,
@@ -58,10 +60,13 @@ impl Network {
     /// nodes.
     ///
     pub async fn init(mut self) -> Result<Self> {
-        let start_port = 50000;
+        let mut num_deployed = 0;
+        let mut port = 30000;
+        while num_deployed < self.conf.num_nodes {
+            while Self::is_port_in_use(port) {
+                port += 1;
+            }
 
-        for i in 0..self.conf.num_nodes {
-            let port = start_port + i;
             let node = Node::new(self.conf.pastry_conf.clone(), "0.0.0.0", &port.to_string())?;
 
             let bootstrap_addr = if self.nodes.is_empty() {
@@ -86,6 +91,7 @@ impl Network {
             self.nodes.push(NetworkNode { info, handle });
 
             rx.recv().await.unwrap();
+            num_deployed += 1;
         }
 
         self.nodes.sort_by_key(|f| f.info.id);
@@ -93,6 +99,10 @@ impl Network {
         println!("Created network: {}", self);
 
         Ok(self)
+    }
+
+    pub fn is_port_in_use(port: i32) -> bool {
+        TcpListener::bind(format!("0.0.0.0:{}", port)).is_err()
     }
 
     /// Gets a connection to a random node in the network.

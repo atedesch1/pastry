@@ -33,12 +33,12 @@ fn get_neighbors<T>(vector: &[T], index: usize, k: usize) -> Vec<&T> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_join() -> Result<(), Box<dyn std::error::Error>> {
-    // env_logger::Builder::from_default_env()
-    //     .filter_level(log::LevelFilter::Debug)
-    //     .init();
+    env_logger::Builder::from_default_env()
+        .filter_level(log::LevelFilter::Debug)
+        .init();
 
-    for k in 1..4 {
-        for num_of_nodes in 1..8 {
+    for k in vec![1, 2, 4, 8, 16] {
+        for num_of_nodes in vec![32, 64] {
             let network = Network::new(NetworkConfiguration {
                 pastry_conf: PastryConfig { leaf_set_k: k },
                 num_nodes: num_of_nodes,
