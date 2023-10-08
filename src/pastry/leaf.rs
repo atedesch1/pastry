@@ -1,4 +1,8 @@
-use crate::error::{Error, Result};
+use crate::{
+    error::{Error, Result},
+    hring::ring::{Ring, Ring64},
+    util,
+};
 use std::{fmt::Display, vec};
 
 use super::shared::KeyValuePair;
@@ -162,6 +166,34 @@ impl<T: Clone> LeafSet<T> {
             .map(|idx| self.set[idx].value.clone())
     }
 
+    /// Gets value which has the key closest to the supplied one.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The key to find the closest value to.
+    ///
+    /// # Returns
+    ///
+    /// A Result containing the value that has key closest to the supplied one and the number of
+    /// the matched digits between the key supplied and the KeyValuePair key.
+    ///
+    pub fn get_closest(&self, key: u64) -> Result<(T, usize)> {
+        let mut closest: Option<&KeyValuePair<u64, T>> = None;
+
+        for kv in &self.set {
+            if closest.is_none()
+                || Ring64::distance(key, kv.key) < Ring64::distance(key, closest.unwrap().key)
+            {
+                closest = Some(kv);
+            }
+        }
+
+        Ok((
+            closest.unwrap().value.clone(),
+            util::get_num_matched_digits(key, closest.unwrap().key)? as usize,
+        ))
+    }
+
     /// Gets right neighbor.
     ///
     /// # Returns
@@ -208,6 +240,10 @@ impl<T: Clone> LeafSet<T> {
 
     pub fn get_set(&self) -> &Vec<KeyValuePair<u64, T>> {
         &self.set
+    }
+
+    pub fn get_set_mut(&mut self) -> &mut Vec<KeyValuePair<u64, T>> {
+        &mut self.set
     }
 
     pub fn get_node_index(&self) -> usize {
