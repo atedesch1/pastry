@@ -37,8 +37,8 @@ async fn test_join() -> Result<(), Box<dyn std::error::Error>> {
         .filter_level(log::LevelFilter::Debug)
         .init();
 
-    for k in vec![1, 2, 4, 8, 16] {
-        for num_of_nodes in vec![32, 64] {
+    for k in vec![1, 4, 16] {
+        for num_of_nodes in vec![1, 4, 16, 64] {
             let network = Network::new(NetworkConfiguration {
                 pastry_conf: PastryConfig { leaf_set_k: k },
                 num_nodes: num_of_nodes,
