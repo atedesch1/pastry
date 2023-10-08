@@ -11,20 +11,28 @@ message GetNodeStateResponse {
   repeated LeafSetEntry leaf_set = 2;
 }
 
-message JoinRequest {
+message RoutingTableEntry {
   uint64 id = 1;
   string pub_addr = 2;
 }
 
+message JoinRequest {
+  uint64 id = 1;
+  string pub_addr = 2;
+  uint32 matched_digits = 3;
+  repeated RoutingTableEntry table_entries = 4;
+}
+
 message LeafSetEntry {
-    uint64 id = 1;
-    string pub_addr = 2;
+  uint64 id = 1;
+  string pub_addr = 2;
 }
 
 message JoinResponse {
   uint64 id = 1;
   string pub_addr = 2;
   repeated LeafSetEntry leaf_set = 3;
+  repeated RoutingTableEntry routing_table = 4;
 }
 
 message LeaveRequest {
@@ -43,6 +51,8 @@ message QueryResponse {
 }
 
 message UpdateNeighborsRequest {
-    uint64 id = 1;
-    string pub_addr = 2;
+  uint64 id = 1;
+  string pub_addr = 2;
+  repeated LeafSetEntry leaf_set = 3;
+  repeated RoutingTableEntry routing_table = 4;
 }

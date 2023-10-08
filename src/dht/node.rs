@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use log::{info, warn};
+use log::{debug, info, warn};
 use tokio::sync::{mpsc::Sender, Notify, RwLock};
 use tonic::transport::{Channel, Server};
 
@@ -20,7 +20,7 @@ pub struct NodeInfo {
     pub pub_addr: String,
 }
 
-const MAX_CONNECT_RETRIES: usize = 5;
+const MAX_CONNECT_RETRIES: usize = 10;
 const CONNECT_TIMEOUT_SECONDS: u64 = 1;
 
 #[derive(Debug, Clone)]
@@ -55,7 +55,7 @@ pub struct State {
     pub changed: Notify,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Node {
     pub id: u64,
     pub addr: String,
@@ -177,39 +177,80 @@ impl Node {
 
         info!("#{:x}: Connecting to network", id);
 
+        let mut leaf = leaf.write().await;
+        let mut table = table.write().await;
+
         let mut client = Node::connect_with_retry(&bootstrap_addr).await?;
         let join_response = client
             .join(JoinRequest {
                 id,
                 pub_addr: pub_addr.clone(),
+                matched_digits: 0,
+                table_entries: Vec::new(),
             })
             .await?
             .into_inner();
 
+        // Update routing table
+        info!("#{:x}: Updating routing table", id);
+        for entry in &join_response.routing_table {
+            table.insert(
+                entry.id,
+                NodeInfo {
+                    id: entry.id,
+                    pub_addr: entry.pub_addr.clone(),
+                },
+            )?;
+        }
+        info!("#{:x}: Updated routing table", id);
+
         // Update leaf set
         info!("#{:x}: Updating leaf set", id);
-        let mut leaf = leaf.write().await;
-        for entry in join_response.leaf_set {
-            let mut client = Node::connect_with_retry(&entry.pub_addr).await?;
-            client
-                .update_neighbors(UpdateNeighborsRequest {
-                    id,
-                    pub_addr: pub_addr.clone(),
-                })
-                .await?;
+        for entry in &join_response.leaf_set {
+            let client = Node::connect_with_retry(&entry.pub_addr).await?;
             leaf.insert(
                 entry.id,
                 NodeConnection::new(entry.id, &entry.pub_addr, Some(client)),
             )?;
         }
         info!("#{:x}: Updated leaf set", id);
+
+        debug!("#{:X}: Leaf set updated: \n{}", id, leaf);
+        debug!("#{:X}: Routing table updated: \n{}", id, table);
+
+        // Update neighbors
+        info!("#{:x}: Updating neighbors", id);
+        let update_request = UpdateNeighborsRequest {
+            id,
+            pub_addr: pub_addr.clone(),
+            leaf_set: join_response.leaf_set.clone(),
+            routing_table: join_response.routing_table.clone(),
+        };
+        for entry in leaf.get_set_mut() {
+            if entry.value.info.id != id {
+                entry
+                    .value
+                    .client
+                    .as_mut()
+                    .unwrap()
+                    .update_neighbors(update_request.clone())
+                    .await?;
+            }
+        }
+        for entry in join_response.routing_table.iter().filter(|e| e.id != id) {
+            let mut client = Node::connect_with_retry(&entry.pub_addr).await?;
+            client.update_neighbors(update_request.clone()).await?;
+        }
+        info!("#{:x}: Updated neighbors", id);
         *st = NodeState::RoutingRequests;
         state.changed.notify_waiters();
         info!("#{:x}: Connected to network", id);
 
         if let Some(tx) = connected_tx {
+            // warn!("#{:X}: Sending connected message", id);
             tx.send(true).await?;
             tx.closed().await;
+            // warn!("#{:X}: Dropping tx", id);
         }
 
         Ok(())

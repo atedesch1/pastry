@@ -67,40 +67,41 @@ impl<T: Clone> RoutingTable<T> {
         Ok(())
     }
 
-    /// Returns the next node to route the request to in the Pastry algorithm.
-    pub fn route(&self, key: u64, min_matched_digits: usize) -> Result<T> {
-        for i in min_matched_digits..U64_HEX_NUM_OF_DIGITS as usize {
-            let table_digit = get_nth_digit_in_u64_hex(self.id, i)?;
-            let key_digit = get_nth_digit_in_u64_hex(key, i)?;
+    /// Returns the next node to route the request to in the Pastry algorithm and the number of
+    /// matched digits.
+    pub fn route(&self, key: u64, min_matched_digits: usize) -> Result<Option<(T, usize)>> {
+        if min_matched_digits > self.table.len() - 1 {
+            return Ok(None);
+        }
 
-            if self.table.len() == i + 1 || table_digit != key_digit {
-                let row = &self.table[i];
-                if let Some(entry) = row[key_digit as usize].as_ref() {
-                    return Ok(entry.value.clone());
-                } else {
-                    // Should start from the "no entry" digit and expand outwards
-                    let mut closest: &Option<KeyValuePair<u64, T>> = &None;
-                    for entry in row {
-                        if let Some(e) = entry {
-                            if closest.is_none()
-                                || (Ring64::distance(e.key, self.id)
-                                    < Ring64::distance(closest.as_ref().unwrap().key, self.id))
-                            {
-                                closest = entry;
-                            }
-                        }
+        let matched_digits = util::get_num_matched_digits(self.id, key)? as usize;
+        let row_index = matched_digits.min(self.table.len() - 1);
+
+        if min_matched_digits > row_index {
+            return Ok(None);
+        }
+
+        let row = &self.table[row_index];
+        let key_digit = util::get_nth_digit_in_u64_hex(key, row_index)?;
+
+        let mut closest: &Option<KeyValuePair<u64, T>> = &None;
+
+        if row[key_digit as usize].is_some() {
+            closest = &row[key_digit as usize];
+        } else {
+            for entry in row {
+                if let Some(e) = entry {
+                    if closest.is_none()
+                        || (Ring64::distance(e.key, self.id)
+                            < Ring64::distance(closest.as_ref().unwrap().key, self.id))
+                    {
+                        closest = entry;
                     }
-
-                    return closest.clone().map(|kv| kv.value).ok_or(
-                        crate::error::Error::Internal("could not find a node to route to.".into()),
-                    );
                 }
             }
         }
 
-        Err(crate::error::Error::Internal(
-            "could not find a node to route to.".into(),
-        ))
+        Ok(closest.clone().map(|kv| (kv.value, row_index)))
     }
 
     /// Returns an Option containing a row of the routing table if it exists.
@@ -192,11 +193,11 @@ mod tests {
         t.insert(kv4.key, kv4.value)?;
 
         let key = 0xFEDCBA0111111111;
-        assert_eq!(t.route(key, 0)?, kv1.value);
-        assert_eq!(t.route(key, 6)?, kv1.value);
+        assert_eq!(t.route(key, 0)?.unwrap(), (kv1.value, 6));
+        assert_eq!(t.route(key, 6)?.unwrap(), (kv1.value, 6));
 
         let key = 0xFEDCBA3333333333;
-        assert_eq!(t.route(key, 0)?, kv4.value);
+        assert_eq!(t.route(key, 0)?.unwrap(), (kv4.value, 6));
 
         Ok(())
     }

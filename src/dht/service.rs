@@ -1,13 +1,14 @@
-use log::info;
+use log::{debug, info};
 use tonic::{Request, Response, Status};
 
 use crate::{
     dht::node::{Node, NodeConnection, NodeInfo, NodeState},
     rpc::node::{
         node_service_server::NodeService, GetNodeIdResponse, GetNodeStateResponse, JoinRequest,
-        JoinResponse, LeafSetEntry, LeaveRequest, QueryRequest, QueryResponse,
+        JoinResponse, LeafSetEntry, LeaveRequest, QueryRequest, QueryResponse, RoutingTableEntry,
         UpdateNeighborsRequest,
     },
+    util::U64_HEX_NUM_OF_DIGITS,
 };
 
 #[tonic::async_trait]
@@ -53,6 +54,31 @@ impl NodeService for super::node::Node {
 
         let req = request.get_ref();
 
+        let mut table_entries = req.table_entries.clone();
+
+        // Append routing table entries from this node
+        let table = self.table.read().await;
+        // for i in req.matched_digits..U64_HEX_NUM_OF_DIGITS {
+        for i in 0..U64_HEX_NUM_OF_DIGITS {
+            match table.get_row(i as usize) {
+                Some(row) => {
+                    for entry in row {
+                        if let Some(entry) = entry {
+                            table_entries.push(RoutingTableEntry {
+                                id: entry.value.id,
+                                pub_addr: entry.value.pub_addr.clone(),
+                            });
+                        }
+                    }
+                }
+                None => break,
+            }
+        }
+        table_entries.push(RoutingTableEntry {
+            id: self.id,
+            pub_addr: self.pub_addr.clone(),
+        });
+
         let conn = {
             let leaf = self.leaf.read().await;
             leaf.get(req.id).clone()
@@ -64,15 +90,24 @@ impl NodeService for super::node::Node {
 
                 if conn.info.id != self.id {
                     // Forward to neighbor in leaf set
-                    return conn.client.unwrap().join(request).await;
+                    return conn
+                        .client
+                        .unwrap()
+                        .join(Request::new(JoinRequest {
+                            id: req.id,
+                            pub_addr: req.pub_addr.clone(),
+                            matched_digits: req.matched_digits,
+                            table_entries,
+                        }))
+                        .await;
                 }
                 // Current node is closest previous to joining node
 
                 let leaf = self.leaf.read().await;
                 let leaf_set = {
-                    let mut set = leaf.get_set();
+                    let mut set = leaf.get_set().clone();
 
-                    // Remove first element if leaf set is full
+                    // Remove left most neighbor if leaf set is full
                     if leaf.is_full() {
                         set.remove(leaf.get_first_index().unwrap());
                     }
@@ -89,25 +124,37 @@ impl NodeService for super::node::Node {
                     id: self.id,
                     pub_addr: self.pub_addr.clone(),
                     leaf_set,
+                    routing_table: table_entries,
                 }))
             }
             None => {
-                // Route using routing table
-                // let mut client = {
-                //     let table = self.table.read().await;
-                //     let info = table.route(req.id, 0)?;
-                //     NodeServiceClient::connect(info.pub_addr.clone())
-                //         .await
-                //         .unwrap()
-                // };
-                // client.join(Request::new(req)).await
-
-                // Remove after routing table is implemented
-                let conn = {
-                    let leaf = self.leaf.read().await;
-                    leaf.get_right_neighbor().clone()
+                let (mut client, matched_digits) = {
+                    match self
+                        .table
+                        .read()
+                        .await
+                        .route(req.id, req.matched_digits as usize + 1)?
+                    {
+                        // Forward request using routing table
+                        Some((info, matched)) => {
+                            (Node::connect_with_retry(&info.pub_addr).await?, matched)
+                        }
+                        // Forward request using closest leaf node
+                        None => {
+                            let (closest, matched) = self.leaf.read().await.get_closest(req.id)?;
+                            (closest.client.unwrap(), matched)
+                        }
+                    }
                 };
-                conn.unwrap().client.unwrap().join(request).await
+
+                client
+                    .join(Request::new(JoinRequest {
+                        id: req.id,
+                        pub_addr: req.pub_addr.clone(),
+                        matched_digits: matched_digits as u32,
+                        table_entries,
+                    }))
+                    .await
             }
         }
     }
@@ -146,22 +193,27 @@ impl NodeService for super::node::Node {
             return Ok(Response::new(QueryResponse { id: self.id }));
         }
 
-        // Forward request using routing table
-        // let mut client = {
-        //     let table = self.table.read().await;
-        //     let info = table.route(req.key, 0)?;
-        //     NodeServiceClient::connect(info.pub_addr.clone())
-        //         .await
-        //         .unwrap()
-        // };
-        // client.query(Request::new(req)).await
-
-        // Remove after routing table is implemented
-        let conn = {
-            let leaf = self.leaf.read().await;
-            leaf.get_right_neighbor().clone()
+        let table = self.table.read().await;
+        let route_result = table.route(req.key, req.matched_digits as usize + 1)?;
+        let (mut client, matched_digits) = {
+            match route_result {
+                // Forward request using routing table
+                Some((info, matched)) => (Node::connect_with_retry(&info.pub_addr).await?, matched),
+                // Forward request using closest leaf node
+                None => {
+                    let (closest, matched) = self.leaf.read().await.get_closest(req.key)?;
+                    (closest.client.unwrap(), matched)
+                }
+            }
         };
-        conn.unwrap().client.unwrap().query(request).await
+
+        client
+            .query(Request::new(QueryRequest {
+                from_id: self.id,
+                matched_digits: matched_digits as u32,
+                key: req.key,
+            }))
+            .await
     }
 
     async fn update_neighbors(
@@ -175,25 +227,57 @@ impl NodeService for super::node::Node {
         let req = request.get_ref();
 
         let mut leaf = self.leaf.write().await;
+        let mut table = self.table.write().await;
 
-        if let Some(conn) = leaf.get(req.id) {
-            if conn.info.id == self.id {
-                // Is closest previous neighbor
-            }
-
-            // Register as neighbor
-            let client = Node::connect_with_retry(&req.pub_addr).await?;
-            leaf.insert(
-                req.id,
-                NodeConnection {
-                    info: NodeInfo {
-                        id: req.id,
-                        pub_addr: req.pub_addr.clone(),
+        if let Some(entry) = leaf.get(req.id) {
+            if entry.info.id != req.id {
+                // debug!("#{:X}: Attempting to connect to #{:X}", self.id, req.id);
+                // debug!("#{:X}: leaf - \n{}", self.id, leaf);
+                // debug!("#{:X}: table - \n{}", self.id, table);
+                let client = Node::connect_with_retry(&req.pub_addr).await?;
+                leaf.insert(
+                    req.id,
+                    NodeConnection {
+                        info: NodeInfo {
+                            id: req.id,
+                            pub_addr: req.pub_addr.clone(),
+                        },
+                        client: Some(client),
                     },
-                    client: Some(client),
+                )?;
+            }
+        }
+
+        table.insert(
+            req.id,
+            NodeInfo {
+                id: req.id,
+                pub_addr: req.pub_addr.clone(),
+            },
+        )?;
+
+        for entry in &req.leaf_set {
+            table.insert(
+                entry.id,
+                NodeInfo {
+                    id: entry.id,
+                    pub_addr: entry.pub_addr.clone(),
                 },
             )?;
         }
+
+        for entry in &req.routing_table {
+            table.insert(
+                entry.id,
+                NodeInfo {
+                    id: entry.id,
+                    pub_addr: entry.pub_addr.clone(),
+                },
+            )?;
+        }
+
+        debug!("#{:X}: Leaf set updated: \n{}", self.id, leaf);
+        debug!("#{:X}: Routing table updated: \n{}", self.id, table);
 
         self.change_state(NodeState::RoutingRequests).await;
         Ok(Response::new(()))
