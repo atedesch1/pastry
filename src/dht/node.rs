@@ -132,18 +132,7 @@ impl Node {
     ) -> Result<JoinHandle<Result<()>>> {
         info!("#{:X}: Initializing node on {}", self.id, self.pub_addr);
 
-        let addr: SocketAddr = self.addr.clone().parse()?;
-        let incoming = tonic::transport::server::TcpIncoming::new(addr, true, None)
-            .map_err(|e| Error::from(e))?;
-
-        let node = self.clone();
-        let handle = tokio::spawn(async move {
-            Server::builder()
-                .add_service(NodeServiceServer::new(node))
-                .serve_with_incoming(incoming)
-                .await
-                .map_err(|e| Error::from(e))
-        });
+        let server_handle = self.initialize_server().await?;
 
         if let Some(bootstrap_addr) = bootstrap_addr {
             Self::connect_to_network(
@@ -159,7 +148,21 @@ impl Node {
             info!("#{:X}: Connected to network", self.id);
         }
 
-        Ok(handle)
+        Ok(server_handle)
+    }
+
+    async fn initialize_server(&self) -> Result<JoinHandle<Result<()>>> {
+        let addr: SocketAddr = self.addr.clone().parse()?;
+        let incoming = tonic::transport::server::TcpIncoming::new(addr, true, None)?;
+
+        let node = self.clone();
+        Ok(tokio::spawn(async move {
+            Server::builder()
+                .add_service(NodeServiceServer::new(node))
+                .serve_with_incoming(incoming)
+                .await
+                .map_err(|e| Error::from(e))
+        }))
     }
 
     /// Connects to bootstrap node.
