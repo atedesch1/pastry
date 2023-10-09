@@ -109,6 +109,12 @@ impl From<tonic::transport::Error> for Error {
     }
 }
 
+impl From<Box<dyn std::error::Error + Send + Sync>> for Error {
+    fn from(err: Box<dyn std::error::Error + Send + Sync>) -> Self {
+        Error::Internal(err.to_string())
+    }
+}
+
 impl From<TryFromSliceError> for Error {
     fn from(err: TryFromSliceError) -> Self {
         Error::Internal(err.to_string())

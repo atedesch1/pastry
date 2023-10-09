@@ -33,9 +33,9 @@ fn get_neighbors<T>(vector: &[T], index: usize, k: usize) -> Vec<&T> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_join() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::Builder::from_default_env()
-        .filter_level(log::LevelFilter::Debug)
-        .init();
+    // env_logger::Builder::from_default_env()
+    //     .filter_level(log::LevelFilter::Debug)
+    //     .init();
 
     for k in vec![1, 4, 16] {
         for num_of_nodes in vec![1, 4, 16, 64] {

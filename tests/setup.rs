@@ -1,14 +1,14 @@
 use core::fmt;
-use std::net::TcpListener;
+use std::{net::TcpListener, time::Duration};
 
-use log::error;
+use log::warn;
 use pastry::{
     dht::node::{Node, NodeInfo, PastryConfig},
     error::Result,
     rpc::node::node_service_client::NodeServiceClient,
 };
 use rand::Rng;
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::task::JoinHandle;
 use tonic::transport::Channel;
 
 #[derive(Clone)]
@@ -63,34 +63,18 @@ impl Network {
         let mut num_deployed = 0;
         let mut port = 30000;
         while num_deployed < self.conf.num_nodes {
-            // while Self::is_port_in_use(port) {
-            //     port += 1;
-            // }
-
-            let node = Node::new(self.conf.pastry_conf.clone(), "0.0.0.0", &port.to_string())?;
-
-            let bootstrap_addr = if self.nodes.is_empty() {
-                None
-            } else {
-                let random_index = rand::thread_rng().gen_range(0..self.nodes.len());
-                Some(self.nodes[random_index].info.pub_addr.clone())
+            let (info, handle) = loop {
+                match self.setup_node(port).await {
+                    Ok(n) => break n,
+                    Err(e) => {
+                        warn!("error setting up node: {}", e)
+                    }
+                }
+                port += 1;
             };
-
-            let info = NodeInfo {
-                id: node.id,
-                pub_addr: node.pub_addr.clone(),
-            };
-
-            let (tx, mut rx) = mpsc::channel::<bool>(1);
-
-            let handle = tokio::spawn(async move {
-                node.bootstrap_and_serve(bootstrap_addr.as_deref(), Some(tx))
-                    .await
-            });
 
             self.nodes.push(NetworkNode { info, handle });
 
-            rx.recv().await.unwrap();
             num_deployed += 1;
             port += 1;
         }
@@ -102,8 +86,24 @@ impl Network {
         Ok(self)
     }
 
-    pub fn is_port_in_use(port: i32) -> bool {
-        TcpListener::bind(format!("0.0.0.0:{}", port)).is_err()
+    async fn setup_node(&self, port: i32) -> Result<(NodeInfo, JoinHandle<Result<()>>)> {
+        let node = Node::new(self.conf.pastry_conf.clone(), "0.0.0.0", &port.to_string())?;
+
+        let bootstrap_addr = if self.nodes.is_empty() {
+            None
+        } else {
+            let random_index = rand::thread_rng().gen_range(0..self.nodes.len());
+            Some(self.nodes[random_index].info.pub_addr.clone())
+        };
+
+        let info = NodeInfo {
+            id: node.id,
+            pub_addr: node.pub_addr.clone(),
+        };
+
+        let handle = node.bootstrap_and_serve(bootstrap_addr.as_deref()).await?;
+
+        Ok((info, handle))
     }
 
     /// Gets a connection to a random node in the network.

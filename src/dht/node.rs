@@ -1,11 +1,14 @@
-use std::{sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use log::{debug, info, warn};
-use tokio::sync::{mpsc::Sender, Notify, RwLock};
+use tokio::{
+    sync::{Notify, RwLock},
+    task::JoinHandle,
+};
 use tonic::transport::{Channel, Server};
 
 use crate::{
-    error::Result,
+    error::{Error, Result},
     hring::hasher::Sha256Hasher,
     pastry::{leaf::LeafSet, table::RoutingTable},
     rpc::node::{
@@ -127,20 +130,32 @@ impl Node {
     pub async fn bootstrap_and_serve(
         self,
         bootstrap_addr: Option<&str>,
-        connected_tx: Option<Sender<bool>>,
-    ) -> Result<()> {
+    ) -> Result<JoinHandle<Result<()>>> {
         info!("#{:x}: Initializing node on {}", self.id, self.pub_addr);
 
+        let addr: SocketAddr = self.addr.clone().parse()?;
+        let incoming = tonic::transport::server::TcpIncoming::new(addr, true, None)
+            .map_err(|e| Error::from(e))?;
+
+        let node = self.clone();
+        let handle = tokio::spawn(async move {
+            Server::builder()
+                .add_service(NodeServiceServer::new(node))
+                .serve_with_incoming(incoming)
+                .await
+                .map_err(|e| Error::from(e))
+        });
+
         if let Some(bootstrap_addr) = bootstrap_addr {
-            tokio::spawn(Self::connect_to_network(
+            Self::connect_to_network(
                 self.id,
                 self.pub_addr.clone(),
                 self.state.clone(),
                 self.leaf.clone(),
                 self.table.clone(),
                 bootstrap_addr.to_string(),
-                connected_tx,
-            ));
+            )
+            .await?;
         } else {
             info!("#{:x}: Initializing network", self.id);
             {
@@ -149,17 +164,9 @@ impl Node {
                 self.state.changed.notify_waiters();
             }
             info!("#{:x}: Connected to network", self.id);
-            if let Some(tx) = connected_tx {
-                tx.send(true).await?;
-                tx.closed().await;
-            }
         }
 
-        let addr = self.addr.clone();
-        Ok(Server::builder()
-            .add_service(NodeServiceServer::new(self))
-            .serve(addr.parse()?)
-            .await?)
+        Ok(handle)
     }
 
     /// Connects to bootstrap node.
@@ -170,7 +177,6 @@ impl Node {
         leaf: Arc<RwLock<LeafSet<NodeConnection>>>,
         table: Arc<RwLock<RoutingTable<NodeInfo>>>,
         bootstrap_addr: String,
-        connected_tx: Option<Sender<bool>>,
     ) -> Result<()> {
         let mut st = state.state.write().await;
         *st = NodeState::Initializing;
@@ -245,13 +251,6 @@ impl Node {
         *st = NodeState::RoutingRequests;
         state.changed.notify_waiters();
         info!("#{:x}: Connected to network", id);
-
-        if let Some(tx) = connected_tx {
-            // warn!("#{:X}: Sending connected message", id);
-            tx.send(true).await?;
-            tx.closed().await;
-            // warn!("#{:X}: Dropping tx", id);
-        }
 
         Ok(())
     }

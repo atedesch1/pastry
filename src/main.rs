@@ -33,5 +33,5 @@ async fn main() -> Result<()> {
 
     let node = Node::new(config, &hostname, &port)?;
 
-    node.bootstrap_and_serve(bootstrap_addr, None).await
+    node.bootstrap_and_serve(bootstrap_addr).await?.await?
 }
