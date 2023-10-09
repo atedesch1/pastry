@@ -54,8 +54,11 @@ pub enum NodeState {
 
 #[derive(Debug)]
 pub struct State {
-    pub state: RwLock<NodeState>,
+    pub name: RwLock<NodeState>,
     pub changed: Notify,
+
+    pub leaf: RwLock<LeafSet<NodeConnection>>,
+    pub table: RwLock<RoutingTable<NodeInfo>>,
 }
 
 #[derive(Debug, Clone)]
@@ -65,9 +68,6 @@ pub struct Node {
     pub pub_addr: String,
 
     pub state: Arc<State>,
-
-    pub leaf: Arc<RwLock<LeafSet<NodeConnection>>>,
-    pub table: Arc<RwLock<RoutingTable<NodeInfo>>>,
 }
 
 /// Configuration for the Pastry network
@@ -103,16 +103,15 @@ impl Node {
             pub_addr: pub_addr.clone(),
 
             state: Arc::new(State {
-                state: RwLock::new(NodeState::Unitialized),
+                name: RwLock::new(NodeState::Unitialized),
                 changed: Notify::new(),
+                leaf: RwLock::new(LeafSet::new(
+                    config.leaf_set_k,
+                    id,
+                    NodeConnection::new(id, &pub_addr, None),
+                )?),
+                table: RwLock::new(RoutingTable::new(id)),
             }),
-
-            leaf: Arc::new(RwLock::new(LeafSet::new(
-                config.leaf_set_k,
-                id,
-                NodeConnection::new(id, &pub_addr, None),
-            )?)),
-            table: Arc::new(RwLock::new(RoutingTable::new(id))),
         })
     }
 
@@ -151,18 +150,12 @@ impl Node {
                 self.id,
                 self.pub_addr.clone(),
                 self.state.clone(),
-                self.leaf.clone(),
-                self.table.clone(),
                 bootstrap_addr.to_string(),
             )
             .await?;
         } else {
             info!("#{:X}: Initializing network", self.id);
-            {
-                let mut state = self.state.state.write().await;
-                *state = NodeState::RoutingRequests;
-                self.state.changed.notify_waiters();
-            }
+            self.change_state(NodeState::RoutingRequests).await;
             info!("#{:X}: Connected to network", self.id);
         }
 
@@ -174,17 +167,15 @@ impl Node {
         id: u64,
         pub_addr: String,
         state: Arc<State>,
-        leaf: Arc<RwLock<LeafSet<NodeConnection>>>,
-        table: Arc<RwLock<RoutingTable<NodeInfo>>>,
         bootstrap_addr: String,
     ) -> Result<()> {
-        let mut st = state.state.write().await;
+        let mut st = state.name.write().await;
         *st = NodeState::Initializing;
 
         info!("#{:X}: Connecting to network", id);
 
-        let mut leaf = leaf.write().await;
-        let mut table = table.write().await;
+        let mut leaf = state.leaf.write().await;
+        let mut table = state.table.write().await;
 
         let mut client = Node::connect_with_retry(&bootstrap_addr).await?;
         let join_response = client
@@ -257,14 +248,14 @@ impl Node {
 
     /// Changes the Node state and notifies waiters
     pub async fn change_state(&self, next_state: NodeState) {
-        let mut state = self.state.state.write().await;
+        let mut state = self.state.name.write().await;
         *state = next_state;
         self.state.changed.notify_waiters();
     }
 
     /// Blocks thread and yields back execution until state is RoutingRequests
     pub async fn block_until_routing_requests(&self) -> () {
-        while *self.state.state.read().await != NodeState::RoutingRequests {
+        while *self.state.name.read().await != NodeState::RoutingRequests {
             self.state.changed.notified().await;
         }
     }
