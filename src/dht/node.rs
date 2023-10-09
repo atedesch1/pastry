@@ -135,22 +135,18 @@ impl Node {
         let server_handle = self.initialize_server().await?;
 
         if let Some(bootstrap_addr) = bootstrap_addr {
-            Self::connect_to_network(
-                self.id,
-                self.pub_addr.clone(),
-                self.state.clone(),
-                bootstrap_addr.to_string(),
-            )
-            .await?;
+            self.connect_to_network(bootstrap_addr.to_string()).await?;
         } else {
             info!("#{:X}: Initializing network", self.id);
             self.change_state(NodeState::RoutingRequests).await;
-            info!("#{:X}: Connected to network", self.id);
         }
+
+        info!("#{:X}: Connected to network", self.id);
 
         Ok(server_handle)
     }
 
+    /// Initializes gRPC server
     async fn initialize_server(&self) -> Result<JoinHandle<Result<()>>> {
         let addr: SocketAddr = self.addr.clone().parse()?;
         let incoming = tonic::transport::server::TcpIncoming::new(addr, true, None)?;
@@ -166,25 +162,19 @@ impl Node {
     }
 
     /// Connects to bootstrap node.
-    async fn connect_to_network(
-        id: u64,
-        pub_addr: String,
-        state: Arc<State>,
-        bootstrap_addr: String,
-    ) -> Result<()> {
-        let mut st = state.name.write().await;
-        *st = NodeState::Initializing;
+    async fn connect_to_network(&self, bootstrap_addr: String) -> Result<()> {
+        self.change_state(NodeState::Initializing).await;
 
-        info!("#{:X}: Connecting to network", id);
+        info!("#{:X}: Connecting to network", self.id);
 
-        let mut leaf = state.leaf.write().await;
-        let mut table = state.table.write().await;
+        let mut leaf = self.state.leaf.write().await;
+        let mut table = self.state.table.write().await;
 
         let mut client = Node::connect_with_retry(&bootstrap_addr).await?;
         let join_response = client
             .join(JoinRequest {
-                id,
-                pub_addr: pub_addr.clone(),
+                id: self.id,
+                pub_addr: self.pub_addr.clone(),
                 matched_digits: 0,
                 table_entries: Vec::new(),
             })
@@ -192,7 +182,7 @@ impl Node {
             .into_inner();
 
         // Update routing table
-        info!("#{:X}: Updating routing table", id);
+        info!("#{:X}: Updating routing table", self.id);
         for entry in &join_response.routing_table {
             table.insert(
                 entry.id,
@@ -202,10 +192,10 @@ impl Node {
                 },
             )?;
         }
-        info!("#{:X}: Updated routing table", id);
+        info!("#{:X}: Updated routing table", self.id);
 
         // Update leaf set
-        info!("#{:X}: Updating leaf set", id);
+        info!("#{:X}: Updating leaf set", self.id);
         for entry in &join_response.leaf_set {
             let client = Node::connect_with_retry(&entry.pub_addr).await?;
             leaf.insert(
@@ -213,21 +203,21 @@ impl Node {
                 NodeConnection::new(entry.id, &entry.pub_addr, Some(client)),
             )?;
         }
-        info!("#{:X}: Updated leaf set", id);
+        info!("#{:X}: Updated leaf set", self.id);
 
-        debug!("#{:X}: Leaf set updated: \n{}", id, leaf);
-        debug!("#{:X}: Routing table updated: \n{}", id, table);
+        debug!("#{:X}: Leaf set updated: \n{}", self.id, leaf);
+        debug!("#{:X}: Routing table updated: \n{}", self.id, table);
 
         // Update neighbors
-        info!("#{:X}: Updating neighbors", id);
+        info!("#{:X}: Updating neighbors", self.id);
         let update_request = UpdateNeighborsRequest {
-            id,
-            pub_addr: pub_addr.clone(),
+            id: self.id,
+            pub_addr: self.pub_addr.clone(),
             leaf_set: join_response.leaf_set.clone(),
             routing_table: join_response.routing_table.clone(),
         };
         for entry in leaf.get_set_mut() {
-            if entry.value.info.id != id {
+            if entry.value.info.id != self.id {
                 entry
                     .value
                     .client
@@ -237,14 +227,17 @@ impl Node {
                     .await?;
             }
         }
-        for entry in join_response.routing_table.iter().filter(|e| e.id != id) {
+        for entry in join_response
+            .routing_table
+            .iter()
+            .filter(|e| e.id != self.id)
+        {
             let mut client = Node::connect_with_retry(&entry.pub_addr).await?;
             client.update_neighbors(update_request.clone()).await?;
         }
-        info!("#{:X}: Updated neighbors", id);
-        *st = NodeState::RoutingRequests;
-        state.changed.notify_waiters();
-        info!("#{:X}: Connected to network", id);
+        info!("#{:X}: Updated neighbors", self.id);
+
+        self.change_state(NodeState::RoutingRequests).await;
 
         Ok(())
     }
