@@ -17,7 +17,7 @@ impl NodeService for super::node::Node {
         &self,
         _request: Request<()>,
     ) -> std::result::Result<Response<GetNodeIdResponse>, Status> {
-        info!("#{:x}: Got request for get_node_id", self.id);
+        info!("#{:X}: Got request for get_node_id", self.id);
 
         Ok(Response::new(GetNodeIdResponse { id: self.id }))
     }
@@ -26,7 +26,7 @@ impl NodeService for super::node::Node {
         &self,
         _request: Request<()>,
     ) -> std::result::Result<Response<GetNodeStateResponse>, Status> {
-        info!("#{:x}: Got request for get_node_state", self.id);
+        info!("#{:X}: Got request for get_node_state", self.id);
         self.block_until_routing_requests().await;
 
         Ok(Response::new(GetNodeStateResponse {
@@ -49,7 +49,7 @@ impl NodeService for super::node::Node {
         &self,
         request: Request<JoinRequest>,
     ) -> std::result::Result<Response<JoinResponse>, Status> {
-        info!("#{:x}: Got request for join", self.id);
+        info!("#{:X}: Got request for join", self.id);
         self.block_until_routing_requests().await;
 
         let req = request.get_ref();
@@ -163,7 +163,7 @@ impl NodeService for super::node::Node {
         &self,
         request: Request<LeaveRequest>,
     ) -> std::result::Result<Response<()>, Status> {
-        info!("#{:x}: Got request for leave", self.id);
+        info!("#{:X}: Got request for leave", self.id);
         self.block_until_routing_requests().await;
 
         todo!()
@@ -173,7 +173,7 @@ impl NodeService for super::node::Node {
         &self,
         request: Request<QueryRequest>,
     ) -> std::result::Result<Response<QueryResponse>, Status> {
-        info!("#{:x}: Got request for query", self.id);
+        info!("#{:X}: Got request for query", self.id);
         self.block_until_routing_requests().await;
 
         let req = request.get_ref();
@@ -220,7 +220,7 @@ impl NodeService for super::node::Node {
         &self,
         request: Request<UpdateNeighborsRequest>,
     ) -> std::result::Result<Response<()>, Status> {
-        info!("#{:x}: Got request for update_neighbors", self.id);
+        info!("#{:X}: Got request for update_neighbors", self.id);
         self.block_until_routing_requests().await;
         self.change_state(NodeState::UpdatingConnections).await;
 

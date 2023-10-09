@@ -95,7 +95,7 @@ impl Node {
         let addr = format!("0.0.0.0:{}", port);
 
         let id = Sha256Hasher::hash_once(pub_addr.as_bytes());
-        info!("#{:x}: Registered node", id);
+        info!("#{:X}: Registered node", id);
 
         Ok(Node {
             id,
@@ -131,7 +131,7 @@ impl Node {
         self,
         bootstrap_addr: Option<&str>,
     ) -> Result<JoinHandle<Result<()>>> {
-        info!("#{:x}: Initializing node on {}", self.id, self.pub_addr);
+        info!("#{:X}: Initializing node on {}", self.id, self.pub_addr);
 
         let addr: SocketAddr = self.addr.clone().parse()?;
         let incoming = tonic::transport::server::TcpIncoming::new(addr, true, None)
@@ -157,13 +157,13 @@ impl Node {
             )
             .await?;
         } else {
-            info!("#{:x}: Initializing network", self.id);
+            info!("#{:X}: Initializing network", self.id);
             {
                 let mut state = self.state.state.write().await;
                 *state = NodeState::RoutingRequests;
                 self.state.changed.notify_waiters();
             }
-            info!("#{:x}: Connected to network", self.id);
+            info!("#{:X}: Connected to network", self.id);
         }
 
         Ok(handle)
@@ -181,7 +181,7 @@ impl Node {
         let mut st = state.state.write().await;
         *st = NodeState::Initializing;
 
-        info!("#{:x}: Connecting to network", id);
+        info!("#{:X}: Connecting to network", id);
 
         let mut leaf = leaf.write().await;
         let mut table = table.write().await;
@@ -198,7 +198,7 @@ impl Node {
             .into_inner();
 
         // Update routing table
-        info!("#{:x}: Updating routing table", id);
+        info!("#{:X}: Updating routing table", id);
         for entry in &join_response.routing_table {
             table.insert(
                 entry.id,
@@ -208,10 +208,10 @@ impl Node {
                 },
             )?;
         }
-        info!("#{:x}: Updated routing table", id);
+        info!("#{:X}: Updated routing table", id);
 
         // Update leaf set
-        info!("#{:x}: Updating leaf set", id);
+        info!("#{:X}: Updating leaf set", id);
         for entry in &join_response.leaf_set {
             let client = Node::connect_with_retry(&entry.pub_addr).await?;
             leaf.insert(
@@ -219,13 +219,13 @@ impl Node {
                 NodeConnection::new(entry.id, &entry.pub_addr, Some(client)),
             )?;
         }
-        info!("#{:x}: Updated leaf set", id);
+        info!("#{:X}: Updated leaf set", id);
 
         debug!("#{:X}: Leaf set updated: \n{}", id, leaf);
         debug!("#{:X}: Routing table updated: \n{}", id, table);
 
         // Update neighbors
-        info!("#{:x}: Updating neighbors", id);
+        info!("#{:X}: Updating neighbors", id);
         let update_request = UpdateNeighborsRequest {
             id,
             pub_addr: pub_addr.clone(),
@@ -247,10 +247,10 @@ impl Node {
             let mut client = Node::connect_with_retry(&entry.pub_addr).await?;
             client.update_neighbors(update_request.clone()).await?;
         }
-        info!("#{:x}: Updated neighbors", id);
+        info!("#{:X}: Updated neighbors", id);
         *st = NodeState::RoutingRequests;
         state.changed.notify_waiters();
-        info!("#{:x}: Connected to network", id);
+        info!("#{:X}: Connected to network", id);
 
         Ok(())
     }
