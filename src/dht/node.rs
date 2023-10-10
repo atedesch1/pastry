@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use log::{debug, info, warn};
+use log::{info, warn};
 use tokio::{
     sync::{Notify, RwLock, RwLockWriteGuard},
     task::JoinHandle,
@@ -13,7 +13,7 @@ use crate::{
     pastry::{leaf::LeafSet, table::RoutingTable},
     rpc::node::{
         node_service_client::NodeServiceClient, node_service_server::NodeServiceServer,
-        JoinRequest, NodeEntry, UpdateNeighborsRequest,
+        AnnounceArrivalRequest, JoinRequest, NodeEntry,
     },
 };
 
@@ -185,37 +185,7 @@ impl Node {
         self.update_leaf_set(&mut leaf, &join_response.leaf_set)
             .await?;
 
-        debug!("#{:X}: Leaf set updated: \n{}", self.id, leaf);
-        debug!("#{:X}: Routing table updated: \n{}", self.id, table);
-
-        // Update neighbors
-        info!("#{:X}: Updating neighbors", self.id);
-        let update_request = UpdateNeighborsRequest {
-            id: self.id,
-            pub_addr: self.pub_addr.clone(),
-            leaf_set: join_response.leaf_set.clone(),
-            routing_table: join_response.routing_table.clone(),
-        };
-        for entry in leaf.get_set_mut() {
-            if entry.value.info.id != self.id {
-                entry
-                    .value
-                    .client
-                    .as_mut()
-                    .unwrap()
-                    .update_neighbors(update_request.clone())
-                    .await?;
-            }
-        }
-        for entry in join_response
-            .routing_table
-            .iter()
-            .filter(|e| e.id != self.id)
-        {
-            let mut client = Node::connect_with_retry(&entry.pub_addr).await?;
-            client.update_neighbors(update_request.clone()).await?;
-        }
-        info!("#{:X}: Updated neighbors", self.id);
+        self.announce_arrival(&mut leaf, &mut table).await?;
 
         Ok(())
     }
@@ -237,6 +207,42 @@ impl Node {
             )?;
         }
         info!("#{:X}: Updated leaf set", self.id);
+
+        Ok(())
+    }
+
+    async fn announce_arrival(
+        &self,
+        leaf: &mut RwLockWriteGuard<'_, LeafSet<NodeConnection>>,
+        table: &mut RwLockWriteGuard<'_, RoutingTable<NodeInfo>>,
+    ) -> Result<()> {
+        info!("#{:X}: Announcing arrival to all neighbors", self.id);
+        let announce_arrival_request = AnnounceArrivalRequest {
+            id: self.id,
+            pub_addr: self.pub_addr.clone(),
+        };
+
+        for entry in leaf.get_set_mut() {
+            if entry.value.info.id != self.id {
+                entry
+                    .value
+                    .client
+                    .as_mut()
+                    .unwrap()
+                    .announce_arrival(announce_arrival_request.clone())
+                    .await?;
+            }
+        }
+
+        for entry in &table.get_entries() {
+            if let Some(entry) = entry {
+                let mut client = Node::connect_with_retry(&entry.value.pub_addr).await?;
+                client
+                    .announce_arrival(announce_arrival_request.clone())
+                    .await?;
+            }
+        }
+        info!("#{:X}: Announced arrival to all neighbors", self.id);
 
         Ok(())
     }

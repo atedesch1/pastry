@@ -15,6 +15,6 @@ service NodeService {
   rpc Leave(LeaveRequest) returns (google.protobuf.Empty);
   rpc Query(QueryRequest) returns (QueryResponse);
 
-  // UPDATE
-  rpc UpdateNeighbors(UpdateNeighborsRequest) returns (google.protobuf.Empty);
+  // UPDATE NEIGHBORS
+  rpc AnnounceArrival(AnnounceArrivalRequest) returns (google.protobuf.Empty);
 }

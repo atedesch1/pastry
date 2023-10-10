@@ -4,8 +4,9 @@ use tonic::{Request, Response, Status};
 use crate::{
     dht::node::{Node, NodeState},
     rpc::node::{
-        node_service_server::NodeService, GetNodeIdResponse, GetNodeStateResponse, JoinRequest,
-        JoinResponse, LeaveRequest, NodeEntry, QueryRequest, QueryResponse, UpdateNeighborsRequest,
+        node_service_server::NodeService, AnnounceArrivalRequest, GetNodeIdResponse,
+        GetNodeStateResponse, JoinRequest, JoinResponse, LeaveRequest, NodeEntry, QueryRequest,
+        QueryResponse,
     },
     util::U64_HEX_NUM_OF_DIGITS,
 };
@@ -218,11 +219,11 @@ impl NodeService for super::node::Node {
             .await
     }
 
-    async fn update_neighbors(
+    async fn announce_arrival(
         &self,
-        request: Request<UpdateNeighborsRequest>,
+        request: Request<AnnounceArrivalRequest>,
     ) -> std::result::Result<Response<()>, Status> {
-        info!("#{:X}: Got request for update_neighbors", self.id);
+        info!("#{:X}: Got request for announce_arrival", self.id);
         self.block_until_routing_requests().await;
         self.change_state(NodeState::UpdatingConnections).await;
 
@@ -252,9 +253,6 @@ impl NodeService for super::node::Node {
             },
         )
         .await?;
-        self.update_routing_table(&mut table, &req.leaf_set).await?;
-        self.update_routing_table(&mut table, &req.routing_table)
-            .await?;
 
         self.change_state(NodeState::RoutingRequests).await;
         Ok(Response::new(()))

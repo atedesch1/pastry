@@ -45,9 +45,8 @@ message QueryResponse {
   uint64 id = 1;
 }
 
-message UpdateNeighborsRequest {
+message AnnounceArrivalRequest {
   uint64 id = 1;
   string pub_addr = 2;
-  repeated NodeEntry leaf_set = 3;
-  repeated NodeEntry routing_table = 4;
 }
+

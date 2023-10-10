@@ -108,6 +108,11 @@ impl<T: Clone> RoutingTable<T> {
     pub fn get_row(&self, index: usize) -> Option<&Vec<Option<KeyValuePair<u64, T>>>> {
         self.table.get(index)
     }
+
+    /// Returns an Vector containing all entries of the routing table.
+    pub fn get_entries(&self) -> Vec<&Option<KeyValuePair<u64, T>>> {
+        self.table.iter().flat_map(|row| row.iter()).collect()
+    }
 }
 
 impl<T> fmt::Display for RoutingTable<T> {
