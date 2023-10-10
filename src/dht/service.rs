@@ -234,9 +234,6 @@ impl NodeService for super::node::Node {
 
         if let Some(entry) = leaf.get(req.id) {
             if entry.info.id != req.id {
-                // debug!("#{:X}: Attempting to connect to #{:X}", self.id, req.id);
-                // debug!("#{:X}: leaf - \n{}", self.id, leaf);
-                // debug!("#{:X}: table - \n{}", self.id, table);
                 let client = Node::connect_with_retry(&req.pub_addr).await?;
                 leaf.insert(
                     req.id,

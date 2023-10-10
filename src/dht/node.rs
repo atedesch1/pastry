@@ -2,7 +2,7 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use log::{debug, info, warn};
 use tokio::{
-    sync::{Notify, RwLock},
+    sync::{Notify, RwLock, RwLockWriteGuard},
     task::JoinHandle,
 };
 use tonic::transport::{Channel, Server};
@@ -13,7 +13,7 @@ use crate::{
     pastry::{leaf::LeafSet, table::RoutingTable},
     rpc::node::{
         node_service_client::NodeServiceClient, node_service_server::NodeServiceServer,
-        JoinRequest, UpdateNeighborsRequest,
+        JoinRequest, LeafSetEntry, RoutingTableEntry, UpdateNeighborsRequest,
     },
 };
 
@@ -131,16 +131,16 @@ impl Node {
         bootstrap_addr: Option<&str>,
     ) -> Result<JoinHandle<Result<()>>> {
         info!("#{:X}: Initializing node on {}", self.id, self.pub_addr);
-
+        self.change_state(NodeState::Initializing).await;
         let server_handle = self.initialize_server().await?;
 
         if let Some(bootstrap_addr) = bootstrap_addr {
-            self.connect_to_network(bootstrap_addr.to_string()).await?;
+            self.connect_to_network(bootstrap_addr).await?;
         } else {
             info!("#{:X}: Initializing network", self.id);
-            self.change_state(NodeState::RoutingRequests).await;
         }
 
+        self.change_state(NodeState::RoutingRequests).await;
         info!("#{:X}: Connected to network", self.id);
 
         Ok(server_handle)
@@ -162,15 +162,13 @@ impl Node {
     }
 
     /// Connects to bootstrap node.
-    async fn connect_to_network(&self, bootstrap_addr: String) -> Result<()> {
-        self.change_state(NodeState::Initializing).await;
-
+    async fn connect_to_network(&self, bootstrap_addr: &str) -> Result<()> {
         info!("#{:X}: Connecting to network", self.id);
 
         let mut leaf = self.state.leaf.write().await;
         let mut table = self.state.table.write().await;
 
-        let mut client = Node::connect_with_retry(&bootstrap_addr).await?;
+        let mut client = Node::connect_with_retry(bootstrap_addr).await?;
         let join_response = client
             .join(JoinRequest {
                 id: self.id,
@@ -181,29 +179,11 @@ impl Node {
             .await?
             .into_inner();
 
-        // Update routing table
-        info!("#{:X}: Updating routing table", self.id);
-        for entry in &join_response.routing_table {
-            table.insert(
-                entry.id,
-                NodeInfo {
-                    id: entry.id,
-                    pub_addr: entry.pub_addr.clone(),
-                },
-            )?;
-        }
-        info!("#{:X}: Updated routing table", self.id);
+        self.update_routing_table(&mut table, &join_response.routing_table)
+            .await?;
 
-        // Update leaf set
-        info!("#{:X}: Updating leaf set", self.id);
-        for entry in &join_response.leaf_set {
-            let client = Node::connect_with_retry(&entry.pub_addr).await?;
-            leaf.insert(
-                entry.id,
-                NodeConnection::new(entry.id, &entry.pub_addr, Some(client)),
-            )?;
-        }
-        info!("#{:X}: Updated leaf set", self.id);
+        self.update_leaf_set(&mut leaf, &join_response.leaf_set)
+            .await?;
 
         debug!("#{:X}: Leaf set updated: \n{}", self.id, leaf);
         debug!("#{:X}: Routing table updated: \n{}", self.id, table);
@@ -237,7 +217,43 @@ impl Node {
         }
         info!("#{:X}: Updated neighbors", self.id);
 
-        self.change_state(NodeState::RoutingRequests).await;
+        Ok(())
+    }
+
+    pub async fn update_leaf_set(
+        &self,
+        leaf: &mut RwLockWriteGuard<'_, LeafSet<NodeConnection>>,
+        entries: &Vec<LeafSetEntry>,
+    ) -> Result<()> {
+        info!("#{:X}: Updating leaf set", self.id);
+        for entry in entries {
+            let client = Node::connect_with_retry(&entry.pub_addr).await?;
+            leaf.insert(
+                entry.id,
+                NodeConnection::new(entry.id, &entry.pub_addr, Some(client)),
+            )?;
+        }
+        info!("#{:X}: Updated leaf set", self.id);
+
+        Ok(())
+    }
+
+    pub async fn update_routing_table(
+        &self,
+        table: &mut RwLockWriteGuard<'_, RoutingTable<NodeInfo>>,
+        entries: &Vec<RoutingTableEntry>,
+    ) -> Result<()> {
+        info!("#{:X}: Updating routing table", self.id);
+        for entry in entries {
+            table.insert(
+                entry.id,
+                NodeInfo {
+                    id: entry.id,
+                    pub_addr: entry.pub_addr.clone(),
+                },
+            )?;
+        }
+        info!("#{:X}: Updated routing table", self.id);
 
         Ok(())
     }
