@@ -13,7 +13,7 @@ use crate::{
     pastry::{leaf::LeafSet, table::RoutingTable},
     rpc::node::{
         node_service_client::NodeServiceClient, node_service_server::NodeServiceServer,
-        JoinRequest, LeafSetEntry, RoutingTableEntry, UpdateNeighborsRequest,
+        JoinRequest, NodeEntry, UpdateNeighborsRequest,
     },
 };
 
@@ -174,7 +174,7 @@ impl Node {
                 id: self.id,
                 pub_addr: self.pub_addr.clone(),
                 matched_digits: 0,
-                table_entries: Vec::new(),
+                routing_table: Vec::new(),
             })
             .await?
             .into_inner();
@@ -223,7 +223,7 @@ impl Node {
     pub async fn update_leaf_set(
         &self,
         leaf: &mut RwLockWriteGuard<'_, LeafSet<NodeConnection>>,
-        entries: &Vec<LeafSetEntry>,
+        entries: &Vec<NodeEntry>,
     ) -> Result<()> {
         info!("#{:X}: Updating leaf set", self.id);
         for entry in entries {
@@ -241,7 +241,7 @@ impl Node {
     pub async fn update_routing_table(
         &self,
         table: &mut RwLockWriteGuard<'_, RoutingTable<NodeInfo>>,
-        entries: &Vec<RoutingTableEntry>,
+        entries: &Vec<NodeEntry>,
     ) -> Result<()> {
         info!("#{:X}: Updating routing table", self.id);
         for entry in entries {

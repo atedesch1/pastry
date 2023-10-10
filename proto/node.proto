@@ -2,37 +2,32 @@ syntax = "proto3";
 
 package dht.node;
 
+message NodeEntry {
+  uint64 id = 1;
+  string pub_addr = 2;
+}
+
 message GetNodeIdResponse {
   uint64 id = 1;
 }
 
 message GetNodeStateResponse {
   uint64 id = 1;
-  repeated LeafSetEntry leaf_set = 2;
-}
-
-message RoutingTableEntry {
-  uint64 id = 1;
-  string pub_addr = 2;
+  repeated NodeEntry leaf_set = 2;
 }
 
 message JoinRequest {
   uint64 id = 1;
   string pub_addr = 2;
   uint32 matched_digits = 3;
-  repeated RoutingTableEntry table_entries = 4;
-}
-
-message LeafSetEntry {
-  uint64 id = 1;
-  string pub_addr = 2;
+  repeated NodeEntry routing_table = 4;
 }
 
 message JoinResponse {
   uint64 id = 1;
   string pub_addr = 2;
-  repeated LeafSetEntry leaf_set = 3;
-  repeated RoutingTableEntry routing_table = 4;
+  repeated NodeEntry leaf_set = 3;
+  repeated NodeEntry routing_table = 4;
 }
 
 message LeaveRequest {
@@ -53,6 +48,6 @@ message QueryResponse {
 message UpdateNeighborsRequest {
   uint64 id = 1;
   string pub_addr = 2;
-  repeated LeafSetEntry leaf_set = 3;
-  repeated RoutingTableEntry routing_table = 4;
+  repeated NodeEntry leaf_set = 3;
+  repeated NodeEntry routing_table = 4;
 }

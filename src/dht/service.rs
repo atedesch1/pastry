@@ -5,8 +5,7 @@ use crate::{
     dht::node::{Node, NodeConnection, NodeInfo, NodeState},
     rpc::node::{
         node_service_server::NodeService, GetNodeIdResponse, GetNodeStateResponse, JoinRequest,
-        JoinResponse, LeafSetEntry, LeaveRequest, QueryRequest, QueryResponse, RoutingTableEntry,
-        UpdateNeighborsRequest,
+        JoinResponse, LeaveRequest, NodeEntry, QueryRequest, QueryResponse, UpdateNeighborsRequest,
     },
     util::U64_HEX_NUM_OF_DIGITS,
 };
@@ -38,7 +37,7 @@ impl NodeService for super::node::Node {
                 .await
                 .get_set()
                 .iter()
-                .map(|e| LeafSetEntry {
+                .map(|e| NodeEntry {
                     id: e.value.info.id.clone(),
                     pub_addr: e.value.info.pub_addr.clone(),
                 })
@@ -55,7 +54,7 @@ impl NodeService for super::node::Node {
 
         let req = request.get_ref();
 
-        let mut table_entries = req.table_entries.clone();
+        let mut routing_table = req.routing_table.clone();
 
         // Append routing table entries from this node
         let table = self.state.table.read().await;
@@ -65,7 +64,7 @@ impl NodeService for super::node::Node {
                 Some(row) => {
                     for entry in row {
                         if let Some(entry) = entry {
-                            table_entries.push(RoutingTableEntry {
+                            routing_table.push(NodeEntry {
                                 id: entry.value.id,
                                 pub_addr: entry.value.pub_addr.clone(),
                             });
@@ -75,7 +74,7 @@ impl NodeService for super::node::Node {
                 None => break,
             }
         }
-        table_entries.push(RoutingTableEntry {
+        routing_table.push(NodeEntry {
             id: self.id,
             pub_addr: self.pub_addr.clone(),
         });
@@ -98,7 +97,7 @@ impl NodeService for super::node::Node {
                             id: req.id,
                             pub_addr: req.pub_addr.clone(),
                             matched_digits: req.matched_digits,
-                            table_entries,
+                            routing_table,
                         }))
                         .await;
                 }
@@ -114,7 +113,7 @@ impl NodeService for super::node::Node {
                     }
 
                     set.iter()
-                        .map(|e| LeafSetEntry {
+                        .map(|e| NodeEntry {
                             id: e.value.info.id.clone(),
                             pub_addr: e.value.info.pub_addr.clone(),
                         })
@@ -125,7 +124,7 @@ impl NodeService for super::node::Node {
                     id: self.id,
                     pub_addr: self.pub_addr.clone(),
                     leaf_set,
-                    routing_table: table_entries,
+                    routing_table,
                 }))
             }
             None => {
@@ -155,7 +154,7 @@ impl NodeService for super::node::Node {
                         id: req.id,
                         pub_addr: req.pub_addr.clone(),
                         matched_digits: matched_digits as u32,
-                        table_entries,
+                        routing_table,
                     }))
                     .await
             }
