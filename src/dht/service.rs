@@ -8,7 +8,7 @@ use crate::{
         GetNodeStateResponse, JoinRequest, JoinResponse, LeaveRequest, NodeEntry, QueryRequest,
         QueryResponse,
     },
-    util::U64_HEX_NUM_OF_DIGITS,
+    util::{self, U64_HEX_NUM_OF_DIGITS},
 };
 
 #[tonic::async_trait]
@@ -59,8 +59,7 @@ impl NodeService for super::node::Node {
 
         // Append routing table entries from this node
         let table = self.state.table.read().await;
-        // for i in req.matched_digits..U64_HEX_NUM_OF_DIGITS {
-        for i in 0..U64_HEX_NUM_OF_DIGITS {
+        for i in req.matched_digits..U64_HEX_NUM_OF_DIGITS {
             match table.get_row(i as usize) {
                 Some(row) => {
                     for entry in row {
@@ -75,6 +74,7 @@ impl NodeService for super::node::Node {
                 None => break,
             }
         }
+        // Needed?
         routing_table.push(NodeEntry {
             id: self.id,
             pub_addr: self.pub_addr.clone(),
@@ -97,7 +97,7 @@ impl NodeService for super::node::Node {
                         .join(Request::new(JoinRequest {
                             id: req.id,
                             pub_addr: req.pub_addr.clone(),
-                            matched_digits: req.matched_digits,
+                            matched_digits: util::get_num_matched_digits(conn.info.id, req.id)?,
                             routing_table,
                         }))
                         .await;
@@ -189,17 +189,29 @@ impl NodeService for super::node::Node {
         if let Some(conn) = conn {
             if conn.info.id != self.id {
                 // Forward request using leaf set
-                return conn.client.unwrap().query(request).await;
+                return conn
+                    .client
+                    .unwrap()
+                    .query(QueryRequest {
+                        from_id: self.id,
+                        key: req.key,
+                        matched_digits: util::get_num_matched_digits(conn.info.id, req.key)?,
+                    })
+                    .await;
             }
 
             // Node is the owner of key
             return Ok(Response::new(QueryResponse { id: self.id }));
         }
 
-        let table = self.state.table.read().await;
-        let route_result = table.route(req.key, req.matched_digits as usize + 1)?;
         let (mut client, matched_digits) = {
-            match route_result {
+            match self
+                .state
+                .table
+                .read()
+                .await
+                .route(req.key, req.matched_digits as usize + 1)?
+            {
                 // Forward request using routing table
                 Some((info, matched)) => (Node::connect_with_retry(&info.pub_addr).await?, matched),
                 // Forward request using closest leaf node
