@@ -220,13 +220,16 @@ impl Node {
         Ok(())
     }
 
-    pub async fn update_leaf_set(
+    pub async fn update_leaf_set<'a, T>(
         &self,
         leaf: &mut RwLockWriteGuard<'_, LeafSet<NodeConnection>>,
-        entries: &Vec<NodeEntry>,
-    ) -> Result<()> {
+        entries: T,
+    ) -> Result<()>
+    where
+        T: IntoIterator<Item = &'a NodeEntry>,
+    {
         info!("#{:X}: Updating leaf set", self.id);
-        for entry in entries {
+        for entry in entries.into_iter() {
             let client = Node::connect_with_retry(&entry.pub_addr).await?;
             leaf.insert(
                 entry.id,
@@ -238,13 +241,16 @@ impl Node {
         Ok(())
     }
 
-    pub async fn update_routing_table(
+    pub async fn update_routing_table<'a, T>(
         &self,
         table: &mut RwLockWriteGuard<'_, RoutingTable<NodeInfo>>,
-        entries: &Vec<NodeEntry>,
-    ) -> Result<()> {
+        entries: T,
+    ) -> Result<()>
+    where
+        T: IntoIterator<Item = &'a NodeEntry>,
+    {
         info!("#{:X}: Updating routing table", self.id);
-        for entry in entries {
+        for entry in entries.into_iter() {
             table.insert(
                 entry.id,
                 NodeInfo {

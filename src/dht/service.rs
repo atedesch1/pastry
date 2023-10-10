@@ -1,8 +1,8 @@
-use log::{debug, info};
+use log::info;
 use tonic::{Request, Response, Status};
 
 use crate::{
-    dht::node::{Node, NodeConnection, NodeInfo, NodeState},
+    dht::node::{Node, NodeState},
     rpc::node::{
         node_service_server::NodeService, GetNodeIdResponse, GetNodeStateResponse, JoinRequest,
         JoinResponse, LeaveRequest, NodeEntry, QueryRequest, QueryResponse, UpdateNeighborsRequest,
@@ -233,50 +233,28 @@ impl NodeService for super::node::Node {
 
         if let Some(entry) = leaf.get(req.id) {
             if entry.info.id != req.id {
-                let client = Node::connect_with_retry(&req.pub_addr).await?;
-                leaf.insert(
-                    req.id,
-                    NodeConnection {
-                        info: NodeInfo {
-                            id: req.id,
-                            pub_addr: req.pub_addr.clone(),
-                        },
-                        client: Some(client),
+                self.update_leaf_set(
+                    &mut leaf,
+                    &NodeEntry {
+                        id: req.id,
+                        pub_addr: req.pub_addr.clone(),
                     },
-                )?;
+                )
+                .await?;
             }
         }
 
-        table.insert(
-            req.id,
-            NodeInfo {
+        self.update_routing_table(
+            &mut table,
+            &NodeEntry {
                 id: req.id,
                 pub_addr: req.pub_addr.clone(),
             },
-        )?;
-
-        for entry in &req.leaf_set {
-            table.insert(
-                entry.id,
-                NodeInfo {
-                    id: entry.id,
-                    pub_addr: entry.pub_addr.clone(),
-                },
-            )?;
-        }
-
-        for entry in &req.routing_table {
-            table.insert(
-                entry.id,
-                NodeInfo {
-                    id: entry.id,
-                    pub_addr: entry.pub_addr.clone(),
-                },
-            )?;
-        }
-
-        debug!("#{:X}: Leaf set updated: \n{}", self.id, leaf);
-        debug!("#{:X}: Routing table updated: \n{}", self.id, table);
+        )
+        .await?;
+        self.update_routing_table(&mut table, &req.leaf_set).await?;
+        self.update_routing_table(&mut table, &req.routing_table)
+            .await?;
 
         self.change_state(NodeState::RoutingRequests).await;
         Ok(Response::new(()))
