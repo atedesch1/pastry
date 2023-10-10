@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use log::{info, warn};
+use log::{debug, info, warn};
 use tokio::{
     sync::{Notify, RwLock, RwLockWriteGuard},
     task::JoinHandle,
@@ -207,7 +207,31 @@ impl Node {
             )?;
         }
         info!("#{:X}: Updated leaf set", self.id);
+        debug!("#{:X}: Leaf set updated: \n{}", self.id, leaf);
 
+        Ok(())
+    }
+
+    pub async fn update_routing_table<'a, T>(
+        &self,
+        table: &mut RwLockWriteGuard<'_, RoutingTable<NodeInfo>>,
+        entries: T,
+    ) -> Result<()>
+    where
+        T: IntoIterator<Item = &'a NodeEntry>,
+    {
+        info!("#{:X}: Updating routing table", self.id);
+        for entry in entries.into_iter() {
+            table.insert(
+                entry.id,
+                NodeInfo {
+                    id: entry.id,
+                    pub_addr: entry.pub_addr.clone(),
+                },
+            )?;
+        }
+        info!("#{:X}: Updated routing table", self.id);
+        debug!("#{:X}: Routing table updated: \n{}", self.id, table);
         Ok(())
     }
 
@@ -243,29 +267,6 @@ impl Node {
             }
         }
         info!("#{:X}: Announced arrival to all neighbors", self.id);
-
-        Ok(())
-    }
-
-    pub async fn update_routing_table<'a, T>(
-        &self,
-        table: &mut RwLockWriteGuard<'_, RoutingTable<NodeInfo>>,
-        entries: T,
-    ) -> Result<()>
-    where
-        T: IntoIterator<Item = &'a NodeEntry>,
-    {
-        info!("#{:X}: Updating routing table", self.id);
-        for entry in entries.into_iter() {
-            table.insert(
-                entry.id,
-                NodeInfo {
-                    id: entry.id,
-                    pub_addr: entry.pub_addr.clone(),
-                },
-            )?;
-        }
-        info!("#{:X}: Updated routing table", self.id);
 
         Ok(())
     }
