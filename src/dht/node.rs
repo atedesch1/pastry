@@ -55,10 +55,14 @@ pub enum NodeState {
 #[derive(Debug)]
 pub struct State {
     pub name: RwLock<NodeState>,
-    pub changed: Notify,
+    pub notify: Notify,
+    pub data: RwLock<StateData>,
+}
 
-    pub leaf: RwLock<LeafSet<NodeConnection>>,
-    pub table: RwLock<RoutingTable<NodeInfo>>,
+#[derive(Debug)]
+pub struct StateData {
+    pub leaf: LeafSet<NodeConnection>,
+    pub table: RoutingTable<NodeInfo>,
 }
 
 #[derive(Debug, Clone)]
@@ -104,13 +108,15 @@ impl Node {
 
             state: Arc::new(State {
                 name: RwLock::new(NodeState::Unitialized),
-                changed: Notify::new(),
-                leaf: RwLock::new(LeafSet::new(
-                    config.leaf_set_k,
-                    id,
-                    NodeConnection::new(id, &pub_addr, None),
-                )?),
-                table: RwLock::new(RoutingTable::new(id)),
+                notify: Notify::new(),
+                data: RwLock::new(StateData {
+                    leaf: LeafSet::new(
+                        config.leaf_set_k,
+                        id,
+                        NodeConnection::new(id, &pub_addr, None),
+                    )?,
+                    table: RoutingTable::new(id),
+                }),
             }),
         })
     }
@@ -165,8 +171,7 @@ impl Node {
     async fn connect_to_network(&self, bootstrap_addr: &str) -> Result<()> {
         info!("#{:X}: Connecting to network", self.id);
 
-        let mut leaf = self.state.leaf.write().await;
-        let mut table = self.state.table.write().await;
+        let mut state_data = self.state.data.write().await;
 
         let mut client = Node::connect_with_retry(bootstrap_addr).await?;
         let join_response = client
@@ -179,20 +184,20 @@ impl Node {
             .await?
             .into_inner();
 
-        self.update_routing_table(&mut table, &join_response.routing_table)
+        self.update_routing_table(&mut state_data, &join_response.routing_table)
             .await?;
 
-        self.update_leaf_set(&mut leaf, &join_response.leaf_set)
+        self.update_leaf_set(&mut state_data, &join_response.leaf_set)
             .await?;
 
-        self.announce_arrival(&mut leaf, &mut table).await?;
+        self.announce_arrival(&mut state_data).await?;
 
         Ok(())
     }
 
     pub async fn update_leaf_set<'a, T>(
         &self,
-        leaf: &mut RwLockWriteGuard<'_, LeafSet<NodeConnection>>,
+        state_data: &mut RwLockWriteGuard<'_, StateData>,
         entries: T,
     ) -> Result<()>
     where
@@ -201,20 +206,20 @@ impl Node {
         info!("#{:X}: Updating leaf set", self.id);
         for entry in entries.into_iter() {
             let client = Node::connect_with_retry(&entry.pub_addr).await?;
-            leaf.insert(
+            state_data.leaf.insert(
                 entry.id,
                 NodeConnection::new(entry.id, &entry.pub_addr, Some(client)),
             )?;
         }
         info!("#{:X}: Updated leaf set", self.id);
-        debug!("#{:X}: Leaf set updated: \n{}", self.id, leaf);
+        debug!("#{:X}: Leaf set updated: \n{}", self.id, state_data.leaf);
 
         Ok(())
     }
 
     pub async fn update_routing_table<'a, T>(
         &self,
-        table: &mut RwLockWriteGuard<'_, RoutingTable<NodeInfo>>,
+        state_data: &mut RwLockWriteGuard<'_, StateData>,
         entries: T,
     ) -> Result<()>
     where
@@ -222,7 +227,7 @@ impl Node {
     {
         info!("#{:X}: Updating routing table", self.id);
         for entry in entries.into_iter() {
-            table.insert(
+            state_data.table.insert(
                 entry.id,
                 NodeInfo {
                     id: entry.id,
@@ -231,14 +236,16 @@ impl Node {
             )?;
         }
         info!("#{:X}: Updated routing table", self.id);
-        debug!("#{:X}: Routing table updated: \n{}", self.id, table);
+        debug!(
+            "#{:X}: Routing table updated: \n{}",
+            self.id, state_data.table
+        );
         Ok(())
     }
 
     async fn announce_arrival(
         &self,
-        leaf: &mut RwLockWriteGuard<'_, LeafSet<NodeConnection>>,
-        table: &mut RwLockWriteGuard<'_, RoutingTable<NodeInfo>>,
+        state_data: &mut RwLockWriteGuard<'_, StateData>,
     ) -> Result<()> {
         info!("#{:X}: Announcing arrival to all neighbors", self.id);
         let announce_arrival_request = AnnounceArrivalRequest {
@@ -246,7 +253,7 @@ impl Node {
             pub_addr: self.pub_addr.clone(),
         };
 
-        for entry in leaf.get_set_mut() {
+        for entry in state_data.leaf.get_set_mut() {
             if entry.value.info.id != self.id {
                 entry
                     .value
@@ -258,7 +265,7 @@ impl Node {
             }
         }
 
-        for entry in &table.get_entries() {
+        for entry in &state_data.table.get_entries() {
             if let Some(entry) = entry {
                 let mut client = Node::connect_with_retry(&entry.value.pub_addr).await?;
                 client
@@ -275,13 +282,13 @@ impl Node {
     pub async fn change_state(&self, next_state: NodeState) {
         let mut state = self.state.name.write().await;
         *state = next_state;
-        self.state.changed.notify_waiters();
+        self.state.notify.notify_waiters();
     }
 
     /// Blocks thread and yields back execution until state is RoutingRequests
     pub async fn block_until_routing_requests(&self) -> () {
         while *self.state.name.read().await != NodeState::RoutingRequests {
-            self.state.changed.notified().await;
+            self.state.notify.notified().await;
         }
     }
 

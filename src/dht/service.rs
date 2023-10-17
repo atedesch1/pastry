@@ -33,9 +33,10 @@ impl NodeService for super::node::Node {
             id: self.id,
             leaf_set: self
                 .state
-                .leaf
+                .data
                 .read()
                 .await
+                .leaf
                 .get_set()
                 .iter()
                 .map(|e| NodeEntry {
@@ -59,9 +60,9 @@ impl NodeService for super::node::Node {
 
         // Append routing table entries from this node
         {
-            let table = self.state.table.read().await;
+            let data = self.state.data.read().await;
             for i in req.matched_digits..U64_HEX_NUM_OF_DIGITS {
-                match table.get_row(i as usize) {
+                match data.table.get_row(i as usize) {
                     Some(row) => {
                         for entry in row {
                             if let Some(entry) = entry {
@@ -81,37 +82,34 @@ impl NodeService for super::node::Node {
             pub_addr: self.pub_addr.clone(),
         });
 
-        let conn = {
-            let leaf = self.state.leaf.read().await;
-            leaf.get(req.id).clone()
-        };
+        let node = self.state.data.read().await.leaf.get(req.id).clone();
 
-        match conn {
-            Some(conn) => {
+        match node {
+            Some(node) => {
                 // Route using leaf set
 
-                if conn.info.id != self.id {
+                if node.info.id != self.id {
                     // Forward to neighbor in leaf set
-                    return conn
+                    return node
                         .client
                         .unwrap()
                         .join(Request::new(JoinRequest {
                             id: req.id,
                             pub_addr: req.pub_addr.clone(),
-                            matched_digits: util::get_num_matched_digits(conn.info.id, req.id)?,
+                            matched_digits: util::get_num_matched_digits(node.info.id, req.id)?,
                             routing_table,
                         }))
                         .await;
                 }
                 // Current node is closest previous to joining node
 
-                let leaf = self.state.leaf.read().await;
+                let data = self.state.data.read().await;
                 let leaf_set = {
-                    let mut set = leaf.get_set().clone();
+                    let mut set = data.leaf.get_set().clone();
 
                     // Remove left most neighbor if leaf set is full
-                    if leaf.is_full() {
-                        set.remove(leaf.get_first_index().unwrap());
+                    if data.leaf.is_full() {
+                        set.remove(data.leaf.get_first_index().unwrap());
                     }
 
                     set.iter()
@@ -131,21 +129,15 @@ impl NodeService for super::node::Node {
             }
             None => {
                 let (mut client, matched_digits) = {
-                    match self
-                        .state
-                        .table
-                        .read()
-                        .await
-                        .route(req.id, req.matched_digits as usize + 1)?
-                    {
+                    let data = self.state.data.read().await;
+                    match data.table.route(req.id, req.matched_digits as usize + 1)? {
                         // Forward request using routing table
                         Some((info, matched)) => {
                             (Node::connect_with_retry(&info.pub_addr).await?, matched)
                         }
                         // Forward request using closest leaf node
                         None => {
-                            let (closest, matched) =
-                                self.state.leaf.read().await.get_closest(req.id)?;
+                            let (closest, matched) = data.leaf.get_closest(req.id)?;
                             (closest.client.unwrap(), matched)
                         }
                     }
@@ -182,21 +174,18 @@ impl NodeService for super::node::Node {
 
         let req = request.get_ref();
 
-        let conn = {
-            let leaf = self.state.leaf.read().await;
-            leaf.get(req.key).clone()
-        };
+        let node = self.state.data.read().await.leaf.get(req.key).clone();
 
-        if let Some(conn) = conn {
-            if conn.info.id != self.id {
+        if let Some(node) = node {
+            if node.info.id != self.id {
                 // Forward request using leaf set
-                return conn
+                return node
                     .client
                     .unwrap()
                     .query(QueryRequest {
                         from_id: self.id,
                         key: req.key,
-                        matched_digits: util::get_num_matched_digits(conn.info.id, req.key)?,
+                        matched_digits: util::get_num_matched_digits(node.info.id, req.key)?,
                     })
                     .await;
             }
@@ -206,18 +195,13 @@ impl NodeService for super::node::Node {
         }
 
         let (mut client, matched_digits) = {
-            match self
-                .state
-                .table
-                .read()
-                .await
-                .route(req.key, req.matched_digits as usize + 1)?
-            {
+            let data = self.state.data.read().await;
+            match data.table.route(req.key, req.matched_digits as usize + 1)? {
                 // Forward request using routing table
                 Some((info, matched)) => (Node::connect_with_retry(&info.pub_addr).await?, matched),
                 // Forward request using closest leaf node
                 None => {
-                    let (closest, matched) = self.state.leaf.read().await.get_closest(req.key)?;
+                    let (closest, matched) = data.leaf.get_closest(req.key)?;
                     (closest.client.unwrap(), matched)
                 }
             }
@@ -242,13 +226,12 @@ impl NodeService for super::node::Node {
 
         let req = request.get_ref();
 
-        let mut leaf = self.state.leaf.write().await;
-        let mut table = self.state.table.write().await;
+        let mut data = self.state.data.write().await;
 
-        if let Some(entry) = leaf.get(req.id) {
+        if let Some(entry) = data.leaf.get(req.id) {
             if entry.info.id != req.id {
                 self.update_leaf_set(
-                    &mut leaf,
+                    &mut data,
                     &NodeEntry {
                         id: req.id,
                         pub_addr: req.pub_addr.clone(),
@@ -259,7 +242,7 @@ impl NodeService for super::node::Node {
         }
 
         self.update_routing_table(
-            &mut table,
+            &mut data,
             &NodeEntry {
                 id: req.id,
                 pub_addr: req.pub_addr.clone(),
