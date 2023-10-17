@@ -61,6 +61,31 @@ where
     }
 }
 
+pub fn get_neighbors<T>(vector: &[T], index: usize, k: usize) -> Vec<&T> {
+    let len = vector.len();
+    if len == 0 || index >= len || k == 0 {
+        return Vec::new(); // Return an empty vector for invalid inputs.
+    }
+
+    if vector.len() < 2 * k + 1 {
+        return Vec::from_iter(vector.iter());
+    }
+
+    let mut neighbors = Vec::with_capacity(2 * k + 1);
+
+    for i in (0..=k).rev() {
+        let prev_index = (index + len - i) % len;
+        neighbors.push(&vector[prev_index]);
+    }
+
+    for i in 1..=k {
+        let next_index = (index + i) % len;
+        neighbors.push(&vector[next_index]);
+    }
+
+    neighbors
+}
+
 mod tests {
     use super::*;
 

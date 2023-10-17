@@ -35,13 +35,13 @@ async fn test_query() -> Result<(), Box<dyn std::error::Error>> {
     //     .init();
 
     let network = Network::new(NetworkConfiguration {
-        pastry_conf: PastryConfig { leaf_set_k: 2 },
-        num_nodes: 20,
+        pastry_conf: PastryConfig { leaf_set_k: 4 },
+        num_nodes: 128,
     })
     .init()
     .await?;
 
-    for i in 0..5 {
+    for i in 0..256 {
         let (_, mut client) = network.get_random_node_connection().await?;
 
         let key = Sha256Hasher::hash_once(

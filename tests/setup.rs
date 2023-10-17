@@ -1,11 +1,11 @@
 use core::fmt;
-use std::{net::TcpListener, time::Duration};
 
 use log::warn;
 use pastry::{
     dht::node::{Node, NodeInfo, PastryConfig},
     error::Result,
     rpc::node::node_service_client::NodeServiceClient,
+    util::get_neighbors,
 };
 use rand::Rng;
 use tokio::task::JoinHandle;
@@ -56,19 +56,29 @@ impl Network {
         }
     }
 
-    /// Initializes the Pastry Network, filling the vector of nodes with connections to the network
-    /// nodes.
+    /// Initializes the Pastry Network.
+    /// Creates and serves all nodes and updates their state based on network.
     ///
-    pub async fn init(mut self) -> Result<Self> {
+    /// This function just calls init_by_state().
+    ///
+    pub async fn init(self) -> Result<Self> {
+        self.init_by_state().await
+    }
+
+    /// Initializes the Pastry Network.
+    /// Creates each node by bootstraping to the previously created nodes
+    /// and serving them.
+    ///
+    /// This will make each node request to join the network.
+    ///
+    pub async fn init_by_join(mut self) -> Result<Self> {
         let mut num_deployed = 0;
         let mut port = 30000;
         while num_deployed < self.conf.num_nodes {
             let (info, handle) = loop {
                 match self.setup_node(port).await {
                     Ok(n) => break n,
-                    Err(e) => {
-                        warn!("error setting up node: {}", e)
-                    }
+                    Err(e) => warn!("error setting up node: {}", e),
                 }
                 port += 1;
             };
@@ -80,6 +90,61 @@ impl Network {
         }
 
         self.nodes.sort_by_key(|f| f.info.id);
+
+        println!("Created network: {}", self);
+
+        Ok(self)
+    }
+
+    /// Initializes the Pastry Network.
+    /// Creates and serves all nodes and updates their state based on network.
+    ///
+    /// This will only update each node's state
+    ///
+    pub async fn init_by_state(mut self) -> Result<Self> {
+        let mut num_deployed = 0;
+        let mut port = 30000;
+
+        let mut nodes: Vec<Node> = Vec::new();
+        while num_deployed < self.conf.num_nodes {
+            let (node, handle) = loop {
+                match self.serve_node(port).await {
+                    Ok(n) => break n,
+                    Err(e) => warn!("error setting up node: {}", e),
+                }
+                port += 1;
+            };
+
+            let info = NodeInfo {
+                id: node.id,
+                pub_addr: node.pub_addr.clone(),
+            };
+
+            self.nodes.push(NetworkNode { info, handle });
+            nodes.push(node);
+
+            num_deployed += 1;
+            port += 1;
+        }
+
+        self.nodes.sort_by_key(|f| f.info.id);
+        nodes.sort_by_key(|f| f.id);
+
+        let infos: Vec<NodeInfo> = self.nodes.iter().map(|f| f.info.clone()).collect();
+
+        loop {
+            if let Some(node) = nodes.pop() {
+                let idx = nodes.len();
+                let leaf_set: Vec<NodeInfo> =
+                    get_neighbors(&self.nodes, idx, self.conf.pastry_conf.leaf_set_k)
+                        .iter()
+                        .map(|f| f.info.clone())
+                        .collect();
+                node.route_with_state(leaf_set, infos.clone()).await?;
+            } else {
+                break;
+            }
+        }
 
         println!("Created network: {}", self);
 
@@ -104,6 +169,14 @@ impl Network {
         let handle = node.bootstrap_and_serve(bootstrap_addr.as_deref()).await?;
 
         Ok((info, handle))
+    }
+
+    async fn serve_node(&self, port: i32) -> Result<(Node, JoinHandle<Result<()>>)> {
+        let node = Node::new(self.conf.pastry_conf.clone(), "0.0.0.0", &port.to_string())?;
+
+        let handle = node.serve().await?;
+
+        Ok((node, handle))
     }
 
     /// Gets a connection to a random node in the network.

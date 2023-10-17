@@ -121,6 +121,46 @@ impl Node {
         })
     }
 
+    /// Registers a new DHT node which will be available publicly on
+    /// http://hostname:port
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - The Pastry network configuration.
+    /// * `hostname` - The Hostname to serve this node on.
+    /// * `port` - The port to serve this node on.
+    /// * `id` - The node's id.
+    ///
+    /// # Returns
+    ///
+    /// A Result containing the newly registered node.
+    ///
+    pub fn from_id(config: PastryConfig, hostname: &str, port: &str, id: u64) -> Result<Self> {
+        let pub_addr = format!("http://{}:{}", hostname, port);
+        let addr = format!("0.0.0.0:{}", port);
+
+        info!("#{:X}: Registered node", id);
+
+        Ok(Node {
+            id,
+            addr,
+            pub_addr: pub_addr.clone(),
+
+            state: Arc::new(State {
+                name: RwLock::new(NodeState::Unitialized),
+                notify: Notify::new(),
+                data: RwLock::new(StateData {
+                    leaf: LeafSet::new(
+                        config.leaf_set_k,
+                        id,
+                        NodeConnection::new(id, &pub_addr, None),
+                    )?,
+                    table: RoutingTable::new(id),
+                }),
+            }),
+        })
+    }
+
     /// Connects to network via bootstrap node and serves node server.
     /// Consumes node.
     ///
@@ -150,6 +190,60 @@ impl Node {
         info!("#{:X}: Connected to network", self.id);
 
         Ok(server_handle)
+    }
+
+    /// Serves node server.
+    ///
+    /// # Returns
+    ///
+    /// A Result containing the JoinHandle for the server.
+    ///
+    pub async fn serve(&self) -> Result<JoinHandle<Result<()>>> {
+        info!("#{:X}: Initializing node on {}", self.id, self.pub_addr);
+        self.change_state(NodeState::Initializing).await;
+        let server_handle = self.initialize_server().await?;
+
+        Ok(server_handle)
+    }
+
+    /// Updates state and consumes node.
+    ///
+    /// # Arguments
+    ///
+    /// * `leaf` - A vector containing the nodes of its leaf set.
+    /// * `table` - A vector containing the nodes of its routing table.
+    ///
+    /// # Returns
+    ///
+    /// An empty Result.
+    ///
+    pub async fn route_with_state(self, leaf: Vec<NodeInfo>, table: Vec<NodeInfo>) -> Result<()> {
+        info!("#{:X}: Updating connections", self.id);
+        self.change_state(NodeState::UpdatingConnections).await;
+
+        let mut state_data = self.state.data.write().await;
+        let table_entries: Vec<NodeEntry> = table
+            .iter()
+            .map(|e| NodeEntry {
+                id: e.id,
+                pub_addr: e.pub_addr.clone(),
+            })
+            .collect();
+        self.update_routing_table(&mut state_data, &table_entries)
+            .await?;
+
+        let leaf_entries: Vec<NodeEntry> = leaf
+            .iter()
+            .map(|e| NodeEntry {
+                id: e.id,
+                pub_addr: e.pub_addr.clone(),
+            })
+            .collect();
+        self.update_leaf_set(&mut state_data, &leaf_entries).await?;
+
+        self.change_state(NodeState::RoutingRequests).await;
+        info!("#{:X}: Connected to network", self.id);
+        Ok(())
     }
 
     /// Initializes gRPC server
