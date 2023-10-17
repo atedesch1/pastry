@@ -130,7 +130,7 @@ impl Node {
     ///
     /// # Returns
     ///
-    /// An empty Result.
+    /// A Result containing the JoinHandle for the server.
     ///
     pub async fn bootstrap_and_serve(
         self,
