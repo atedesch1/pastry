@@ -58,23 +58,24 @@ impl NodeService for super::node::Node {
         let mut routing_table = req.routing_table.clone();
 
         // Append routing table entries from this node
-        let table = self.state.table.read().await;
-        for i in req.matched_digits..U64_HEX_NUM_OF_DIGITS {
-            match table.get_row(i as usize) {
-                Some(row) => {
-                    for entry in row {
-                        if let Some(entry) = entry {
-                            routing_table.push(NodeEntry {
-                                id: entry.value.id,
-                                pub_addr: entry.value.pub_addr.clone(),
-                            });
+        {
+            let table = self.state.table.read().await;
+            for i in req.matched_digits..U64_HEX_NUM_OF_DIGITS {
+                match table.get_row(i as usize) {
+                    Some(row) => {
+                        for entry in row {
+                            if let Some(entry) = entry {
+                                routing_table.push(NodeEntry {
+                                    id: entry.value.id,
+                                    pub_addr: entry.value.pub_addr.clone(),
+                                });
+                            }
                         }
                     }
+                    None => break,
                 }
-                None => break,
             }
         }
-        // Needed?
         routing_table.push(NodeEntry {
             id: self.id,
             pub_addr: self.pub_addr.clone(),
