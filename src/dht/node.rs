@@ -334,8 +334,8 @@ impl Node {
         };
 
         for entry in state_data.leaf.get_entries() {
-            if entry.value.id != self.id {
-                let mut client = Node::connect_with_retry(&entry.value.pub_addr).await?;
+            if entry.id != self.id {
+                let mut client = Node::connect_with_retry(&entry.pub_addr).await?;
                 client
                     .announce_arrival(announce_arrival_request.clone())
                     .await?;

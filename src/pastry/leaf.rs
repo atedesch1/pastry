@@ -7,12 +7,15 @@ use std::{fmt::Display, vec};
 
 use super::shared::KeyValuePair;
 
-/// LeafSet is a data structure used in the Pastry routing algorithm. The leaf set is a data
-/// structure that holds connections to the closests neighbors to a node.
+/// LeafSet is a data structure used in the Pastry routing algorithm.
+/// The leaf set is a data structure that holds connection information
+/// of the node's closests neighbors (that have the closest IDs).
 #[derive(Debug, Clone)]
 pub struct LeafSet<T: Clone> {
     max_size: usize,
     node_idx: usize,
+    first_idx: usize,
+    last_idx: usize,
     set: Vec<KeyValuePair<u64, T>>,
 }
 
@@ -37,8 +40,137 @@ impl<T: Clone> LeafSet<T> {
         Ok(Self {
             max_size: 2 * k + 1,
             node_idx: 0,
+            first_idx: 0,
+            last_idx: 0,
             set: vec![KeyValuePair::new(key, value)],
         })
+    }
+
+    /// Checks if the leaf set is full.
+    ///
+    pub fn is_full(&self) -> bool {
+        self.set.len() == self.max_size
+    }
+
+    /// Gets the maximum leaf set size (2k + 1).
+    ///
+    pub fn get_max_size(&self) -> usize {
+        self.max_size
+    }
+
+    /// Gets all leaf set entries.
+    ///
+    pub fn get_set(&self) -> Vec<&T> {
+        self.set.iter().map(|e| &e.value).collect()
+    }
+
+    /// Gets leaf set entries, filtering out the center node entry.
+    ///
+    pub fn get_entries(&self) -> Vec<&T> {
+        let node_id = self.set[self.node_idx].key;
+        self.set
+            .iter()
+            .filter(|&e| e.key != node_id)
+            .map(|e| &e.value)
+            .collect()
+    }
+
+    /// Gets the node that is the owner of the supplied key.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The key being routed.
+    ///
+    /// # Returns
+    ///
+    /// An Option containing the owner of the supplied key, or None if not found.
+    ///
+    pub fn get(&self, key: u64) -> Option<&T> {
+        self.find_owner(key).map(|idx| &self.set[idx].value)
+    }
+
+    /// Gets the node which has the closest ID to the supplied one.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - The key to find the closest node to.
+    ///
+    /// # Returns
+    ///
+    /// A Result containing the node that has key closest to the supplied one and the number of
+    /// the matched digits between the key supplied and the node ID.
+    ///
+    pub fn get_closest(&self, key: u64) -> Result<(&T, usize)> {
+        let mut closest: Option<&KeyValuePair<u64, T>> = None;
+
+        for kv in &self.set {
+            if closest.is_none()
+                || Ring64::distance(key, kv.key) < Ring64::distance(key, closest.unwrap().key)
+            {
+                closest = Some(kv);
+            }
+        }
+
+        Ok((
+            &closest.unwrap().value,
+            util::get_num_matched_digits(key, closest.unwrap().key)? as usize,
+        ))
+    }
+
+    /// Gets first counter clockwise neighbor.
+    ///
+    /// # Returns
+    ///
+    /// An Option containing the neighbor of leaf set owner, or None if it has none.
+    ///
+    pub fn get_first_counter_clockwise_neighbor(&self) -> Option<&T> {
+        let idx = (self.set.len() + self.node_idx - 1) % self.set.len();
+        match idx == self.node_idx {
+            true => None,
+            false => Some(&self.set[idx].value),
+        }
+    }
+
+    /// Gets first clockwise neighbor.
+    ///
+    /// # Returns
+    ///
+    /// An Option containing the neighbor of leaf set owner, or None if it has none.
+    ///
+    pub fn get_first_clockwise_neighbor(&self) -> Option<&T> {
+        let idx = (self.node_idx + 1) % self.set.len();
+        match idx == self.node_idx {
+            true => None,
+            false => Some(&self.set[idx].value),
+        }
+    }
+
+    /// Gets furthest neighbor in the counter clockwise direction.
+    ///
+    /// # Returns
+    ///
+    /// An Option containing the neighbor. None if set is not full.
+    ///
+    pub fn get_furthest_counter_clockwise_neighbor(&self) -> Option<&T> {
+        if !self.is_full() {
+            return None;
+        }
+
+        Some(&self.set[self.first_idx].value)
+    }
+
+    /// Gets furthest neighbor in the clockwise direction.
+    ///
+    /// # Returns
+    ///
+    /// An Option containing the neighbor. None if set is not full.
+    ///
+    pub fn get_furthest_clockwise_neighbor(&self) -> Option<&T> {
+        if !self.is_full() {
+            return None;
+        }
+
+        Some(&self.set[self.last_idx].value)
     }
 
     /// Inserts a key-value pair into the LeafSet, maintaining its size and order.
@@ -67,7 +199,7 @@ impl<T: Clone> LeafSet<T> {
     pub fn insert(&mut self, key: u64, value: T) -> Result<()> {
         let new_pair = KeyValuePair::new(key, value);
 
-        if self.set.len() < self.max_size {
+        if !self.is_full() {
             let position = match self.set.binary_search_by(|pair| pair.key.cmp(&key)) {
                 Ok(position) => position,
                 Err(position) => position,
@@ -80,13 +212,13 @@ impl<T: Clone> LeafSet<T> {
             }
         } else {
             let position = self
-                .find_responsible(key)
+                .find_owner(key)
                 .ok_or(Error::Internal("key cannot be outside set".into()))?;
 
-            let replaced_index = if self.is_right_neighbor(position).unwrap() {
-                self.get_last_index().unwrap()
+            let replaced_index = if self.is_clockwise_neighbor(position).unwrap() {
+                self.last_idx
             } else {
-                self.get_first_index().unwrap()
+                self.first_idx
             };
 
             let id = self.set[self.node_idx].key;
@@ -100,6 +232,11 @@ impl<T: Clone> LeafSet<T> {
             self.set[replaced_index] = new_pair;
 
             self.set.sort_by_key(|e| e.key);
+        }
+
+        if self.is_full() {
+            self.last_idx = (self.node_idx + self.max_size / 2) % self.max_size;
+            self.first_idx = (self.last_idx + 1) % self.max_size;
         }
 
         Ok(())
@@ -148,153 +285,45 @@ impl<T: Clone> LeafSet<T> {
         Ok(())
     }
 
-    /// Gets owner value of supplied key.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - The key being routed.
-    ///
-    /// # Returns
-    ///
-    /// An Option containing the owner value of the supplied key, or None if not found.
-    ///
-    pub fn get(&self, key: u64) -> Option<T> {
-        self.find_responsible(key)
-            .map(|idx| self.set[idx].value.clone())
-    }
-
-    /// Gets value which has the key closest to the supplied one.
-    ///
-    /// # Arguments
-    ///
-    /// * `key` - The key to find the closest value to.
-    ///
-    /// # Returns
-    ///
-    /// A Result containing the value that has key closest to the supplied one and the number of
-    /// the matched digits between the key supplied and the KeyValuePair key.
-    ///
-    pub fn get_closest(&self, key: u64) -> Result<(T, usize)> {
-        let mut closest: Option<&KeyValuePair<u64, T>> = None;
-
-        for kv in &self.set {
-            if closest.is_none()
-                || Ring64::distance(key, kv.key) < Ring64::distance(key, closest.unwrap().key)
-            {
-                closest = Some(kv);
-            }
-        }
-
-        Ok((
-            closest.unwrap().value.clone(),
-            util::get_num_matched_digits(key, closest.unwrap().key)? as usize,
-        ))
-    }
-
-    /// Gets right neighbor.
-    ///
-    /// # Returns
-    ///
-    /// An Option containing the right neighbor of leaf set owner, or None if it has none.
-    ///
-    pub fn get_right_neighbor(&self) -> Option<T> {
-        let idx = (self.node_idx + 1) % self.set.len();
-        match idx == self.node_idx {
-            true => None,
-            false => Some(self.set[idx].value.clone()),
-        }
-    }
-
-    /// Gets left neighbor.
-    ///
-    /// # Returns
-    ///
-    /// An Option containing the left neighbor of leaf set owner, or None if it has none.
-    ///
-    pub fn get_left_neighbor(&self) -> Option<T> {
-        let idx = (self.set.len() + self.node_idx - 1) % self.set.len();
-        match idx == self.node_idx {
-            true => None,
-            false => Some(self.set[idx].value.clone()),
-        }
-    }
-
-    pub fn get_first_index(&self) -> Option<usize> {
-        if self.set.len() < self.max_size {
-            return None;
-        }
-
-        Some((self.max_size + self.node_idx - self.max_size / 2) % self.max_size)
-    }
-
-    pub fn get_last_index(&self) -> Option<usize> {
-        if self.set.len() < self.max_size {
-            return None;
-        }
-
-        Some((self.node_idx + self.max_size / 2) % self.max_size)
-    }
-
-    pub fn get_set(&self) -> &Vec<KeyValuePair<u64, T>> {
-        &self.set
-    }
-
-    pub fn get_set_mut(&mut self) -> &mut Vec<KeyValuePair<u64, T>> {
-        &mut self.set
-    }
-
-    pub fn get_entries(&self) -> Vec<&KeyValuePair<u64, T>> {
-        let node_id = self.set[self.node_idx].key;
-        self.set.iter().filter(|&e| e.key != node_id).collect()
-    }
-
-    pub fn get_node_index(&self) -> usize {
-        self.node_idx
-    }
-
-    pub fn is_full(&self) -> bool {
-        self.set.len() == self.max_size
-    }
-
-    fn find_responsible(&self, key: u64) -> Option<usize> {
-        let mut position = match self.set.binary_search_by(|pair| pair.key.cmp(&key)) {
-            Ok(position) => position,
-            Err(position) => position,
-        };
-
-        if position == self.set.len() {
-            position -= 1;
-        } else if key < self.set[position].key {
-            position = if position == 0 {
-                self.set.len() - 1
-            } else {
-                position - 1
-            };
-        }
-
-        if self.set.len() == self.max_size && position == self.get_last_index().unwrap() {
-            return None;
-        }
-
-        Some(position)
-    }
-
-    fn is_right_neighbor(&self, idx: usize) -> Result<bool> {
+    /// Checks if the index corresponds to a clockwise neighbor
+    fn is_clockwise_neighbor(&self, idx: usize) -> Result<bool> {
         if idx >= self.set.len() {
             return Err(Error::Internal("index is out of bounds".into()));
         }
 
-        if self.set.len() < self.max_size {
+        if !self.is_full() {
             return Ok(true);
         }
 
-        let last_index = self.get_last_index().unwrap();
-
-        Ok(if last_index > self.node_idx {
-            self.node_idx <= idx && idx <= last_index
+        Ok(if self.last_idx > self.node_idx {
+            self.node_idx <= idx && idx <= self.last_idx
         } else {
-            (self.node_idx <= idx) || (idx <= last_index)
+            (self.node_idx <= idx) || (idx <= self.last_idx)
         })
+    }
+
+    /// Finds the index of the owner of the key in the set
+    fn find_owner(&self, key: u64) -> Option<usize> {
+        let mut index = match self.set.binary_search_by(|pair| pair.key.cmp(&key)) {
+            Ok(index) => index,
+            Err(index) => index,
+        };
+
+        if index == self.set.len() {
+            index -= 1;
+        } else if key < self.set[index].key {
+            index = if index == 0 {
+                self.set.len() - 1
+            } else {
+                index - 1
+            };
+        }
+
+        if self.is_full() && index == self.last_idx {
+            return None;
+        }
+
+        Some(index)
     }
 }
 
@@ -302,16 +331,18 @@ impl<T: Clone> Display for LeafSet<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let set_str = {
             let mut str = String::new();
-            if self.set.len() < self.max_size {
+            if !self.is_full() {
                 str += "-> ";
                 for kv in &self.set {
                     str += format!("{:016X} -> ", kv.key).as_str();
                 }
             } else {
-                let first_index = self.get_first_index().unwrap();
                 for i in 0..self.max_size {
-                    str += format!("{:016X}", self.set[(first_index + i) % self.max_size].key)
-                        .as_str();
+                    str += format!(
+                        "{:016X}",
+                        self.set[(self.first_idx + i) % self.max_size].key
+                    )
+                    .as_str();
                     if i < self.max_size - 1 {
                         str += " -> ";
                     }
@@ -323,6 +354,36 @@ impl<T: Clone> Display for LeafSet<T> {
     }
 }
 
+pub struct LeafSetIterator<T: Clone> {
+    data: LeafSet<T>,
+    index: usize,
+}
+
+impl<T: Clone> Iterator for LeafSetIterator<T> {
+    type Item = KeyValuePair<u64, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index == self.data.last_idx {
+            None
+        } else {
+            self.index = (self.index + 1) % self.data.max_size;
+            Some(self.data.set[self.index].clone())
+        }
+    }
+}
+
+impl<T: Clone> IntoIterator for LeafSet<T> {
+    type Item = KeyValuePair<u64, T>;
+    type IntoIter = LeafSetIterator<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        LeafSetIterator {
+            data: self.clone(),
+            index: self.first_idx,
+        }
+    }
+}
+
 mod tests {
     use super::*;
     use crate::error::{Error, Result};
@@ -331,6 +392,10 @@ mod tests {
         let mut leaf: LeafSet<Option<()>> = LeafSet::new(k, initial, None).unwrap();
         leaf.set = v.iter().map(|&i| KeyValuePair::new(i, None)).collect();
         leaf.node_idx = v.iter().position(|&i| i == initial).unwrap();
+        if leaf.is_full() {
+            leaf.last_idx = (leaf.node_idx + leaf.max_size / 2) % leaf.max_size;
+            leaf.first_idx = (leaf.last_idx + 1) % leaf.max_size;
+        }
         leaf
     }
 
@@ -339,35 +404,35 @@ mod tests {
     }
 
     #[test]
-    fn test_find_responsible() -> Result<()> {
+    fn test_find_owner() -> Result<()> {
         let k = 2;
         // Size < MAX_SIZE
 
         // -> 300 -> 100 -> 200 ->
         let leafset = leafset_from_vec(k, 100, vec![100, 200, 300]);
-        assert_eq!(leafset.find_responsible(350), Some(2));
-        assert_eq!(leafset.find_responsible(50), Some(2));
-        assert_eq!(leafset.find_responsible(150), Some(0));
-        assert_eq!(leafset.find_responsible(250), Some(1));
+        assert_eq!(leafset.find_owner(350), Some(2));
+        assert_eq!(leafset.find_owner(50), Some(2));
+        assert_eq!(leafset.find_owner(150), Some(0));
+        assert_eq!(leafset.find_owner(250), Some(1));
 
         // Size == MAX_SIZE
 
         // 400 -> 500 -> 100 -> 200 -> 300
         let leafset = leafset_from_vec(k, 100, vec![100, 200, 300, 400, 500]);
-        assert_eq!(leafset.find_responsible(450), Some(3));
-        assert_eq!(leafset.find_responsible(550), Some(4));
-        assert_eq!(leafset.find_responsible(150), Some(0));
-        assert_eq!(leafset.find_responsible(250), Some(1));
-        assert_eq!(leafset.find_responsible(350), None);
+        assert_eq!(leafset.find_owner(450), Some(3));
+        assert_eq!(leafset.find_owner(550), Some(4));
+        assert_eq!(leafset.find_owner(150), Some(0));
+        assert_eq!(leafset.find_owner(250), Some(1));
+        assert_eq!(leafset.find_owner(350), None);
 
         // 100 -> 200 -> 300 -> 400 -> 500
         let leafset = leafset_from_vec(k, 300, vec![100, 200, 300, 400, 500]);
-        assert_eq!(leafset.find_responsible(50), None);
-        assert_eq!(leafset.find_responsible(150), Some(0));
-        assert_eq!(leafset.find_responsible(250), Some(1));
-        assert_eq!(leafset.find_responsible(350), Some(2));
-        assert_eq!(leafset.find_responsible(450), Some(3));
-        assert_eq!(leafset.find_responsible(550), None);
+        assert_eq!(leafset.find_owner(50), None);
+        assert_eq!(leafset.find_owner(150), Some(0));
+        assert_eq!(leafset.find_owner(250), Some(1));
+        assert_eq!(leafset.find_owner(350), Some(2));
+        assert_eq!(leafset.find_owner(450), Some(3));
+        assert_eq!(leafset.find_owner(550), None);
 
         Ok(())
     }

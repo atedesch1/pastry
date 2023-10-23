@@ -39,7 +39,7 @@ impl NodeService for super::node::Node {
                 .leaf
                 .get_set()
                 .iter()
-                .map(|e| e.value.clone().to_node_entry())
+                .map(|&e| e.clone().to_node_entry())
                 .collect(),
         }))
     }
@@ -73,7 +73,14 @@ impl NodeService for super::node::Node {
         }
         routing_table.push(self.get_info().to_node_entry());
 
-        let node = self.state.data.read().await.leaf.get(req.id).clone();
+        let node = self
+            .state
+            .data
+            .read()
+            .await
+            .leaf
+            .get(req.id)
+            .map(|e| e.clone());
 
         if let Some(node) = node {
             // Route using leaf set
@@ -94,15 +101,21 @@ impl NodeService for super::node::Node {
 
             let data = self.state.data.read().await;
             let leaf_set = {
-                let mut set = data.leaf.get_set().clone();
+                let mut leaf = data.leaf.clone();
 
                 // Remove left most neighbor if leaf set is full
-                if data.leaf.is_full() {
-                    set.remove(data.leaf.get_first_index().unwrap());
+                if leaf.is_full() {
+                    leaf.remove(
+                        data.leaf
+                            .get_furthest_counter_clockwise_neighbor()
+                            .unwrap()
+                            .id,
+                    )?;
                 }
 
-                set.iter()
-                    .map(|e| e.value.clone().to_node_entry())
+                leaf.get_set()
+                    .iter()
+                    .map(|&e| e.clone().to_node_entry())
                     .collect()
             };
 
@@ -155,7 +168,14 @@ impl NodeService for super::node::Node {
 
         let req = request.get_ref();
 
-        let node = self.state.data.read().await.leaf.get(req.key).clone();
+        let node = self
+            .state
+            .data
+            .read()
+            .await
+            .leaf
+            .get(req.key)
+            .map(|e| e.clone());
 
         if let Some(node) = node {
             if node.id != self.id {
