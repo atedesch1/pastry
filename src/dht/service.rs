@@ -75,71 +75,65 @@ impl NodeService for super::node::Node {
 
         let node = self.state.data.read().await.leaf.get(req.id).clone();
 
-        match node {
-            Some(node) => {
-                // Route using leaf set
+        if let Some(node) = node {
+            // Route using leaf set
 
-                if node.id != self.id {
-                    // Forward to neighbor in leaf set
-                    let mut client = Node::connect_with_retry(&node.pub_addr).await?;
-                    return client
-                        .join(Request::new(JoinRequest {
-                            id: req.id,
-                            pub_addr: req.pub_addr.clone(),
-                            matched_digits: util::get_num_matched_digits(node.id, req.id)?,
-                            routing_table,
-                        }))
-                        .await;
-                }
-                // Current node is closest previous to joining node
-
-                let data = self.state.data.read().await;
-                let leaf_set = {
-                    let mut set = data.leaf.get_set().clone();
-
-                    // Remove left most neighbor if leaf set is full
-                    if data.leaf.is_full() {
-                        set.remove(data.leaf.get_first_index().unwrap());
-                    }
-
-                    set.iter()
-                        .map(|e| e.value.clone().to_node_entry())
-                        .collect()
-                };
-
-                Ok(Response::new(JoinResponse {
-                    id: self.id,
-                    pub_addr: self.pub_addr.clone(),
-                    leaf_set,
-                    routing_table,
-                }))
-            }
-            None => {
-                let (mut client, matched_digits) = {
-                    let data = self.state.data.read().await;
-                    match data.table.route(req.id, req.matched_digits as usize + 1)? {
-                        // Forward request using routing table
-                        Some((info, matched)) => {
-                            (Node::connect_with_retry(&info.pub_addr).await?, matched)
-                        }
-                        // Forward request using closest leaf node
-                        None => {
-                            let (closest, matched) = data.leaf.get_closest(req.id)?;
-                            (Node::connect_with_retry(&closest.pub_addr).await?, matched)
-                        }
-                    }
-                };
-
-                client
+            if node.id != self.id {
+                // Forward to neighbor in leaf set
+                let mut client = Node::connect_with_retry(&node.pub_addr).await?;
+                return client
                     .join(Request::new(JoinRequest {
                         id: req.id,
                         pub_addr: req.pub_addr.clone(),
-                        matched_digits: matched_digits as u32,
+                        matched_digits: util::get_num_matched_digits(node.id, req.id)?,
                         routing_table,
                     }))
-                    .await
+                    .await;
             }
+            // Current node is closest previous to joining node
+
+            let data = self.state.data.read().await;
+            let leaf_set = {
+                let mut set = data.leaf.get_set().clone();
+
+                // Remove left most neighbor if leaf set is full
+                if data.leaf.is_full() {
+                    set.remove(data.leaf.get_first_index().unwrap());
+                }
+
+                set.iter()
+                    .map(|e| e.value.clone().to_node_entry())
+                    .collect()
+            };
+
+            return Ok(Response::new(JoinResponse {
+                id: self.id,
+                pub_addr: self.pub_addr.clone(),
+                leaf_set,
+                routing_table,
+            }));
         }
+        let (mut client, matched_digits) = {
+            let data = self.state.data.read().await;
+            match data.table.route(req.id, req.matched_digits as usize + 1)? {
+                // Forward request using routing table
+                Some((info, matched)) => (Node::connect_with_retry(&info.pub_addr).await?, matched),
+                // Forward request using closest leaf node
+                None => {
+                    let (closest, matched) = data.leaf.get_closest(req.id)?;
+                    (Node::connect_with_retry(&closest.pub_addr).await?, matched)
+                }
+            }
+        };
+
+        client
+            .join(Request::new(JoinRequest {
+                id: req.id,
+                pub_addr: req.pub_addr.clone(),
+                matched_digits: matched_digits as u32,
+                routing_table,
+            }))
+            .await
     }
 
     async fn leave(
