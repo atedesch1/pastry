@@ -39,10 +39,7 @@ impl NodeService for super::node::Node {
                 .leaf
                 .get_set()
                 .iter()
-                .map(|e| NodeEntry {
-                    id: e.value.info.id.clone(),
-                    pub_addr: e.value.info.pub_addr.clone(),
-                })
+                .map(|e| e.value.clone().to_node_entry())
                 .collect(),
         }))
     }
@@ -66,10 +63,7 @@ impl NodeService for super::node::Node {
                     Some(row) => {
                         for entry in row {
                             if let Some(entry) = entry {
-                                routing_table.push(NodeEntry {
-                                    id: entry.value.id,
-                                    pub_addr: entry.value.pub_addr.clone(),
-                                });
+                                routing_table.push(entry.value.clone().to_node_entry());
                             }
                         }
                     }
@@ -77,10 +71,7 @@ impl NodeService for super::node::Node {
                 }
             }
         }
-        routing_table.push(NodeEntry {
-            id: self.id,
-            pub_addr: self.pub_addr.clone(),
-        });
+        routing_table.push(self.get_info().to_node_entry());
 
         let node = self.state.data.read().await.leaf.get(req.id).clone();
 
@@ -88,15 +79,14 @@ impl NodeService for super::node::Node {
             Some(node) => {
                 // Route using leaf set
 
-                if node.info.id != self.id {
+                if node.id != self.id {
                     // Forward to neighbor in leaf set
-                    return node
-                        .client
-                        .unwrap()
+                    let mut client = Node::connect_with_retry(&node.pub_addr).await?;
+                    return client
                         .join(Request::new(JoinRequest {
                             id: req.id,
                             pub_addr: req.pub_addr.clone(),
-                            matched_digits: util::get_num_matched_digits(node.info.id, req.id)?,
+                            matched_digits: util::get_num_matched_digits(node.id, req.id)?,
                             routing_table,
                         }))
                         .await;
@@ -113,10 +103,7 @@ impl NodeService for super::node::Node {
                     }
 
                     set.iter()
-                        .map(|e| NodeEntry {
-                            id: e.value.info.id.clone(),
-                            pub_addr: e.value.info.pub_addr.clone(),
-                        })
+                        .map(|e| e.value.clone().to_node_entry())
                         .collect()
                 };
 
@@ -138,7 +125,7 @@ impl NodeService for super::node::Node {
                         // Forward request using closest leaf node
                         None => {
                             let (closest, matched) = data.leaf.get_closest(req.id)?;
-                            (closest.client.unwrap(), matched)
+                            (Node::connect_with_retry(&closest.pub_addr).await?, matched)
                         }
                     }
                 };
@@ -177,15 +164,14 @@ impl NodeService for super::node::Node {
         let node = self.state.data.read().await.leaf.get(req.key).clone();
 
         if let Some(node) = node {
-            if node.info.id != self.id {
+            if node.id != self.id {
                 // Forward request using leaf set
-                return node
-                    .client
-                    .unwrap()
+                let mut client = Node::connect_with_retry(&node.pub_addr).await?;
+                return client
                     .query(QueryRequest {
                         from_id: self.id,
                         key: req.key,
-                        matched_digits: util::get_num_matched_digits(node.info.id, req.key)?,
+                        matched_digits: util::get_num_matched_digits(node.id, req.key)?,
                     })
                     .await;
             }
@@ -202,7 +188,7 @@ impl NodeService for super::node::Node {
                 // Forward request using closest leaf node
                 None => {
                     let (closest, matched) = data.leaf.get_closest(req.key)?;
-                    (closest.client.unwrap(), matched)
+                    (Node::connect_with_retry(&closest.pub_addr).await?, matched)
                 }
             }
         };
@@ -229,7 +215,7 @@ impl NodeService for super::node::Node {
         let mut data = self.state.data.write().await;
 
         if let Some(entry) = data.leaf.get(req.id) {
-            if entry.info.id != req.id {
+            if entry.id != req.id {
                 self.update_leaf_set(
                     &mut data,
                     &NodeEntry {

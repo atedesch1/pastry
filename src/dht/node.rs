@@ -23,26 +23,28 @@ pub struct NodeInfo {
     pub pub_addr: String,
 }
 
-const MAX_CONNECT_RETRIES: usize = 10;
-const CONNECT_TIMEOUT_SECONDS: u64 = 1;
+impl NodeInfo {
+    pub fn new(id: u64, pub_addr: &str) -> Self {
+        NodeInfo {
+            id,
+            pub_addr: pub_addr.to_owned(),
+        }
+    }
 
-#[derive(Debug, Clone)]
-pub struct NodeConnection {
-    pub info: NodeInfo,
-    pub client: Option<NodeServiceClient<Channel>>,
-}
+    pub fn from_node_entry(entry: &NodeEntry) -> Self {
+        Self::new(entry.id, &entry.pub_addr)
+    }
 
-impl NodeConnection {
-    fn new(id: u64, pub_addr: &str, client: Option<NodeServiceClient<Channel>>) -> Self {
-        NodeConnection {
-            info: NodeInfo {
-                id,
-                pub_addr: pub_addr.to_owned(),
-            },
-            client,
+    pub fn to_node_entry(self) -> NodeEntry {
+        NodeEntry {
+            id: self.id,
+            pub_addr: self.pub_addr,
         }
     }
 }
+
+const MAX_CONNECT_RETRIES: usize = 10;
+const CONNECT_TIMEOUT_SECONDS: u64 = 1;
 
 #[derive(Debug, PartialEq)]
 pub enum NodeState {
@@ -61,7 +63,7 @@ pub struct State {
 
 #[derive(Debug)]
 pub struct StateData {
-    pub leaf: LeafSet<NodeConnection>,
+    pub leaf: LeafSet<NodeInfo>,
     pub table: RoutingTable<NodeInfo>,
 }
 
@@ -81,6 +83,16 @@ pub struct PastryConfig {
 }
 
 impl Node {
+    /// Gets node's id and public address and returns a NodeInfo
+    ///
+    /// # Returns
+    ///
+    /// A NodeInfo.
+    ///
+    pub fn get_info(&self) -> NodeInfo {
+        NodeInfo::new(self.id, &self.pub_addr)
+    }
+
     /// Registers a new DHT node which will be available publicly on
     /// http://hostname:port
     ///
@@ -110,11 +122,7 @@ impl Node {
                 name: RwLock::new(NodeState::Unitialized),
                 notify: Notify::new(),
                 data: RwLock::new(StateData {
-                    leaf: LeafSet::new(
-                        config.leaf_set_k,
-                        id,
-                        NodeConnection::new(id, &pub_addr, None),
-                    )?,
+                    leaf: LeafSet::new(config.leaf_set_k, id, NodeInfo::new(id, &pub_addr))?,
                     table: RoutingTable::new(id),
                 }),
             }),
@@ -150,11 +158,7 @@ impl Node {
                 name: RwLock::new(NodeState::Unitialized),
                 notify: Notify::new(),
                 data: RwLock::new(StateData {
-                    leaf: LeafSet::new(
-                        config.leaf_set_k,
-                        id,
-                        NodeConnection::new(id, &pub_addr, None),
-                    )?,
+                    leaf: LeafSet::new(config.leaf_set_k, id, NodeInfo::new(id, &pub_addr))?,
                     table: RoutingTable::new(id),
                 }),
             }),
@@ -222,23 +226,11 @@ impl Node {
         self.change_state(NodeState::UpdatingConnections).await;
 
         let mut state_data = self.state.data.write().await;
-        let table_entries: Vec<NodeEntry> = table
-            .iter()
-            .map(|e| NodeEntry {
-                id: e.id,
-                pub_addr: e.pub_addr.clone(),
-            })
-            .collect();
+        let table_entries: Vec<NodeEntry> = table.into_iter().map(|e| e.to_node_entry()).collect();
         self.update_routing_table(&mut state_data, &table_entries)
             .await?;
 
-        let leaf_entries: Vec<NodeEntry> = leaf
-            .iter()
-            .map(|e| NodeEntry {
-                id: e.id,
-                pub_addr: e.pub_addr.clone(),
-            })
-            .collect();
+        let leaf_entries: Vec<NodeEntry> = leaf.into_iter().map(|e| e.to_node_entry()).collect();
         self.update_leaf_set(&mut state_data, &leaf_entries).await?;
 
         self.change_state(NodeState::RoutingRequests).await;
@@ -299,11 +291,9 @@ impl Node {
     {
         info!("#{:X}: Updating leaf set", self.id);
         for entry in entries.into_iter() {
-            let client = Node::connect_with_retry(&entry.pub_addr).await?;
-            state_data.leaf.insert(
-                entry.id,
-                NodeConnection::new(entry.id, &entry.pub_addr, Some(client)),
-            )?;
+            state_data
+                .leaf
+                .insert(entry.id, NodeInfo::from_node_entry(entry))?;
         }
         info!("#{:X}: Updated leaf set", self.id);
         debug!("#{:X}: Leaf set updated: \n{}", self.id, state_data.leaf);
@@ -321,13 +311,9 @@ impl Node {
     {
         info!("#{:X}: Updating routing table", self.id);
         for entry in entries.into_iter() {
-            state_data.table.insert(
-                entry.id,
-                NodeInfo {
-                    id: entry.id,
-                    pub_addr: entry.pub_addr.clone(),
-                },
-            )?;
+            state_data
+                .table
+                .insert(entry.id, NodeInfo::from_node_entry(entry))?;
         }
         info!("#{:X}: Updated routing table", self.id);
         debug!(
@@ -347,19 +333,16 @@ impl Node {
             pub_addr: self.pub_addr.clone(),
         };
 
-        for entry in state_data.leaf.get_set_mut() {
-            if entry.value.info.id != self.id {
-                entry
-                    .value
-                    .client
-                    .as_mut()
-                    .unwrap()
+        for entry in state_data.leaf.get_entries() {
+            if entry.value.id != self.id {
+                let mut client = Node::connect_with_retry(&entry.value.pub_addr).await?;
+                client
                     .announce_arrival(announce_arrival_request.clone())
                     .await?;
             }
         }
 
-        for entry in &state_data.table.get_entries() {
+        for entry in state_data.table.get_entries() {
             if let Some(entry) = entry {
                 let mut client = Node::connect_with_retry(&entry.value.pub_addr).await?;
                 client
