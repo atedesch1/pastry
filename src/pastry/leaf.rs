@@ -246,6 +246,11 @@ impl<T: Clone> LeafSet<T> {
         &mut self.set
     }
 
+    pub fn get_entries(&self) -> Vec<&KeyValuePair<u64, T>> {
+        let node_id = self.set[self.node_idx].key;
+        self.set.iter().filter(|&e| e.key != node_id).collect()
+    }
+
     pub fn get_node_index(&self) -> usize {
         self.node_idx
     }
