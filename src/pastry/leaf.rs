@@ -68,13 +68,10 @@ impl<T: Clone> LeafSet<T> {
         let new_pair = KeyValuePair::new(key, value);
 
         if self.set.len() < self.max_size {
-            let mut position = self.find_responsible(key).unwrap();
-
-            if position < self.set.len() && key > self.set[position].key {
-                position += 1;
-            } else if position == self.set.len() - 1 && key < self.set[position].key {
-                position = 0;
-            }
+            let position = match self.set.binary_search_by(|pair| pair.key.cmp(&key)) {
+                Ok(position) => position,
+                Err(position) => position,
+            };
 
             self.set.insert(position, new_pair);
 
@@ -267,9 +264,7 @@ impl<T: Clone> LeafSet<T> {
 
         if position == self.set.len() {
             position -= 1;
-        }
-
-        if key < self.set[position].key {
+        } else if key < self.set[position].key {
             position = if position == 0 {
                 self.set.len() - 1
             } else {
