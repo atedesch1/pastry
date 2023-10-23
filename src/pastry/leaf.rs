@@ -173,6 +173,15 @@ impl<T: Clone> LeafSet<T> {
         Some(&self.set[self.last_idx].value)
     }
 
+    /// Checks if the node corresponds to a clockwise neighbor of center node.
+    pub fn is_clockwise_neighbor(&self, id: u64) -> Result<bool> {
+        let index = self
+            .find_node(id)
+            .ok_or(Error::Internal("node is not in set".into()))?;
+
+        self.is_index_clockwise_neighbor(index)
+    }
+
     /// Inserts a key-value pair into the LeafSet, maintaining its size and order.
     ///
     /// If the LeafSet is not full, the new pair is inserted into the appropriate position based on the key,
@@ -215,7 +224,7 @@ impl<T: Clone> LeafSet<T> {
                 .find_owner(key)
                 .ok_or(Error::Internal("key cannot be outside set".into()))?;
 
-            let replaced_index = if self.is_clockwise_neighbor(position).unwrap() {
+            let replaced_index = if self.is_index_clockwise_neighbor(position).unwrap() {
                 self.last_idx
             } else {
                 self.first_idx
@@ -286,7 +295,7 @@ impl<T: Clone> LeafSet<T> {
     }
 
     /// Checks if the index corresponds to a clockwise neighbor
-    fn is_clockwise_neighbor(&self, idx: usize) -> Result<bool> {
+    fn is_index_clockwise_neighbor(&self, idx: usize) -> Result<bool> {
         if idx >= self.set.len() {
             return Err(Error::Internal("index is out of bounds".into()));
         }
@@ -300,6 +309,11 @@ impl<T: Clone> LeafSet<T> {
         } else {
             (self.node_idx <= idx) || (idx <= self.last_idx)
         })
+    }
+
+    /// Finds the index inside the set of the node with the supplied id.
+    fn find_node(&self, id: u64) -> Option<usize> {
+        self.set.binary_search_by(|pair| pair.key.cmp(&id)).ok()
     }
 
     /// Finds the index of the owner of the key in the set
@@ -357,29 +371,58 @@ impl<T: Clone> Display for LeafSet<T> {
 pub struct LeafSetIterator<T: Clone> {
     data: LeafSet<T>,
     index: usize,
+    is_initiated: bool,
 }
 
 impl<T: Clone> Iterator for LeafSetIterator<T> {
-    type Item = KeyValuePair<u64, T>;
+    type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if !self.is_initiated {
+            self.is_initiated = true;
+            self.index = self.data.first_idx;
+            return Some(self.data.set[self.index].clone().value);
+        }
+
         if self.index == self.data.last_idx {
             None
         } else {
             self.index = (self.index + 1) % self.data.max_size;
-            Some(self.data.set[self.index].clone())
+            Some(self.data.set[self.index].clone().value)
+        }
+    }
+}
+
+impl<T: Clone> DoubleEndedIterator for LeafSetIterator<T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if !self.is_initiated {
+            self.is_initiated = true;
+            self.index = self.data.last_idx;
+            return Some(self.data.set[self.index].clone().value);
+        }
+
+        if self.index == self.data.first_idx {
+            None
+        } else {
+            self.index = if self.index > 0 {
+                self.index - 1
+            } else {
+                self.data.max_size - 1
+            };
+            Some(self.data.set[self.index].clone().value)
         }
     }
 }
 
 impl<T: Clone> IntoIterator for LeafSet<T> {
-    type Item = KeyValuePair<u64, T>;
+    type Item = T;
     type IntoIter = LeafSetIterator<T>;
 
     fn into_iter(self) -> Self::IntoIter {
         LeafSetIterator {
             data: self.clone(),
             index: self.first_idx,
+            is_initiated: false,
         }
     }
 }
@@ -388,9 +431,9 @@ mod tests {
     use super::*;
     use crate::error::{Error, Result};
 
-    fn leafset_from_vec(k: usize, initial: u64, v: Vec<u64>) -> LeafSet<Option<()>> {
-        let mut leaf: LeafSet<Option<()>> = LeafSet::new(k, initial, None).unwrap();
-        leaf.set = v.iter().map(|&i| KeyValuePair::new(i, None)).collect();
+    fn leafset_from_vec(k: usize, initial: u64, v: Vec<u64>) -> LeafSet<u64> {
+        let mut leaf: LeafSet<u64> = LeafSet::new(k, initial, initial).unwrap();
+        leaf.set = v.iter().map(|&i| KeyValuePair::new(i, i)).collect();
         leaf.node_idx = v.iter().position(|&i| i == initial).unwrap();
         if leaf.is_full() {
             leaf.last_idx = (leaf.node_idx + leaf.max_size / 2) % leaf.max_size;
@@ -461,11 +504,11 @@ mod tests {
         assert_eq!(set_to_vec(&leaf), vec![0, 1, 2, 7, 8]);
 
         let mut leaf = leafset_from_vec(k, 4, vec![0, 1, 2, 3, 4]);
-        leaf.insert(5, None)?;
+        leaf.insert(5, 5)?;
         assert_eq!(set_to_vec(&leaf), vec![0, 2, 3, 4, 5]);
 
         let mut leaf = leafset_from_vec(k, 3, vec![1, 3, 4, 5, 6]);
-        leaf.insert(2, None)?;
+        leaf.insert(2, 2)?;
         assert_eq!(set_to_vec(&leaf), vec![1, 2, 3, 4, 5]);
 
         Ok(())
@@ -482,6 +525,27 @@ mod tests {
         leaf.remove(300)?;
         assert_eq!(set_to_vec(&leaf), vec![200, 400]);
         assert_eq!(leaf.node_idx, 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_iterator() -> Result<()> {
+        let k = 2;
+        let leaf = leafset_from_vec(k, 2, vec![0, 1, 2, 3, 4]);
+        println!("{:?}", leaf);
+
+        let mut i = 0;
+        for idx in leaf.clone().into_iter() {
+            assert_eq!(idx, i);
+            i += 1;
+        }
+
+        let mut i = 5;
+        for idx in leaf.into_iter().rev() {
+            i -= 1;
+            assert_eq!(idx, i);
+        }
 
         Ok(())
     }
