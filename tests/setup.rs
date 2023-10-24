@@ -36,6 +36,7 @@ pub struct NetworkNode {
 pub struct Network {
     pub conf: NetworkConfiguration,
     pub nodes: Vec<NetworkNode>,
+    pub ids: Vec<u64>,
 }
 
 impl Network {
@@ -53,7 +54,31 @@ impl Network {
         Network {
             conf,
             nodes: Vec::new(),
+            ids: Vec::new(),
         }
+    }
+
+    /// Specifies the IDs for the nodes.
+    ///
+    /// # Arguments
+    ///
+    /// * `ids` - Vector of Node IDs.
+    ///
+    /// # Returns
+    ///
+    /// The same network with IDs specified.
+    ///
+    /// # Panics
+    ///
+    /// Panics if number of nodes is different then number of IDs.
+    ///
+    pub fn with_ids(mut self, ids: Vec<u64>) -> Self {
+        if ids.len() != self.conf.num_nodes as usize {
+            panic!("number of ids must match number of nodes");
+        }
+
+        self.ids = ids;
+        self
     }
 
     /// Initializes the Pastry Network.
@@ -76,7 +101,18 @@ impl Network {
         let mut port = 30000;
         while num_deployed < self.conf.num_nodes {
             let (info, handle) = loop {
-                match self.setup_node(port).await {
+                let node = if let Some(&id) = self.ids.get(num_deployed as usize) {
+                    Node::from_id(
+                        self.conf.pastry_conf.clone(),
+                        "0.0.0.0",
+                        &port.to_string(),
+                        id,
+                    )?
+                } else {
+                    Node::new(self.conf.pastry_conf.clone(), "0.0.0.0", &port.to_string())?
+                };
+
+                match self.setup_node(node).await {
                     Ok(n) => break n,
                     Err(e) => warn!("error setting up node: {}", e),
                 }
@@ -108,10 +144,21 @@ impl Network {
         let mut nodes: Vec<Node> = Vec::new();
         while num_deployed < self.conf.num_nodes {
             let (node, handle) = loop {
-                match self.serve_node(port).await {
-                    Ok(n) => break n,
+                let node = if let Some(&id) = self.ids.get(num_deployed as usize) {
+                    Node::from_id(
+                        self.conf.pastry_conf.clone(),
+                        "0.0.0.0",
+                        &port.to_string(),
+                        id,
+                    )?
+                } else {
+                    Node::new(self.conf.pastry_conf.clone(), "0.0.0.0", &port.to_string())?
+                };
+
+                match node.serve().await {
+                    Ok(handle) => break (node, handle),
                     Err(e) => warn!("error setting up node: {}", e),
-                }
+                };
                 port += 1;
             };
 
@@ -139,6 +186,7 @@ impl Network {
                     get_neighbors(&self.nodes, idx, self.conf.pastry_conf.leaf_set_k)
                         .iter()
                         .map(|f| f.info.clone())
+                        .filter(|f| f.id != node.id)
                         .collect();
                 node.route_with_state(leaf_set, infos.clone()).await?;
             } else {
@@ -151,9 +199,7 @@ impl Network {
         Ok(self)
     }
 
-    async fn setup_node(&self, port: i32) -> Result<(NodeInfo, JoinHandle<Result<()>>)> {
-        let node = Node::new(self.conf.pastry_conf.clone(), "0.0.0.0", &port.to_string())?;
-
+    async fn setup_node(&self, node: Node) -> Result<(NodeInfo, JoinHandle<Result<()>>)> {
         let bootstrap_addr = if self.nodes.is_empty() {
             None
         } else {
@@ -169,14 +215,6 @@ impl Network {
         let handle = node.bootstrap_and_serve(bootstrap_addr.as_deref()).await?;
 
         Ok((info, handle))
-    }
-
-    async fn serve_node(&self, port: i32) -> Result<(Node, JoinHandle<Result<()>>)> {
-        let node = Node::new(self.conf.pastry_conf.clone(), "0.0.0.0", &port.to_string())?;
-
-        let handle = node.serve().await?;
-
-        Ok((node, handle))
     }
 
     /// Gets a connection to a random node in the network.
