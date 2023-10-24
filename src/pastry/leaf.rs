@@ -318,7 +318,7 @@ impl<T: Clone> LeafSet<T> {
             };
         }
 
-        if self.is_full() && index == self.last_idx {
+        if self.is_full() && index == self.last_idx && self.set[index].key != key {
             return None;
         }
 
