@@ -129,8 +129,9 @@ impl<T> fmt::Display for RoutingTable<T> {
             let mut matched = "*".to_string();
             if i > 0 {
                 matched = format!(
-                    "{:X}",
-                    util::get_first_digits_in_u64_hex(self.id, i).unwrap()
+                    "{:0width$X}",
+                    util::get_first_digits_in_u64_hex(self.id, i).unwrap(),
+                    width = i
                 ) + &matched;
             }
 
