@@ -281,6 +281,35 @@ impl Node {
         Ok(())
     }
 
+    pub async fn route_with_leaf_set(&self, key: u64) -> Option<NodeInfo> {
+        self.state.data.read().await.leaf.get(key).cloned()
+    }
+
+    pub async fn get_closest_from_leaf_set(&self, key: u64) -> (NodeInfo, usize) {
+        self.state
+            .data
+            .read()
+            .await
+            .leaf
+            .get_closest(key)
+            .map(|e| (e.0.clone(), e.1))
+            .unwrap()
+    }
+
+    pub async fn route_with_routing_table(
+        &self,
+        key: u64,
+        min_matched_digits: usize,
+    ) -> Option<(NodeInfo, usize)> {
+        self.state
+            .data
+            .read()
+            .await
+            .table
+            .route(key, min_matched_digits)
+            .unwrap()
+    }
+
     pub async fn update_leaf_set<'a, T>(
         &self,
         state_data: &mut RwLockWriteGuard<'_, StateData>,
