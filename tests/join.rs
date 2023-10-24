@@ -27,12 +27,13 @@ async fn test_join() -> Result<(), Box<dyn std::error::Error>> {
             for (idx, node) in network.nodes.iter().enumerate() {
                 let mut client = Node::connect_with_retry(&node.info.pub_addr).await?;
                 let state = client.get_node_state(Request::new(())).await?.into_inner();
-                let leaf_set = state
+                let mut leaf_set = state
                     .leaf_set
                     .clone()
                     .iter()
                     .map(|f| f.id)
                     .collect::<Vec<u64>>();
+                leaf_set.sort();
                 let mut neighbors =
                     get_neighbors(&network.nodes, idx, network.conf.pastry_conf.leaf_set_k)
                         .iter()
