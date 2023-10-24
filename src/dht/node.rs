@@ -111,7 +111,7 @@ impl Node {
         let addr = format!("0.0.0.0:{}", port);
 
         let id = Sha256Hasher::hash_once(pub_addr.as_bytes());
-        info!("#{:X}: Registered node", id);
+        info!("#{:016X}: Registered node", id);
 
         Ok(Node {
             id,
@@ -147,7 +147,7 @@ impl Node {
         let pub_addr = format!("http://{}:{}", hostname, port);
         let addr = format!("0.0.0.0:{}", port);
 
-        info!("#{:X}: Registered node", id);
+        info!("#{:016X}: Registered node", id);
 
         Ok(Node {
             id,
@@ -180,18 +180,18 @@ impl Node {
         self,
         bootstrap_addr: Option<&str>,
     ) -> Result<JoinHandle<Result<()>>> {
-        info!("#{:X}: Initializing node on {}", self.id, self.pub_addr);
+        info!("#{:016X}: Initializing node on {}", self.id, self.pub_addr);
         self.change_state(NodeState::Initializing).await;
         let server_handle = self.initialize_server().await?;
 
         if let Some(bootstrap_addr) = bootstrap_addr {
             self.connect_to_network(bootstrap_addr).await?;
         } else {
-            info!("#{:X}: Initializing network", self.id);
+            info!("#{:016X}: Initializing network", self.id);
         }
 
         self.change_state(NodeState::RoutingRequests).await;
-        info!("#{:X}: Connected to network", self.id);
+        info!("#{:016X}: Connected to network", self.id);
 
         Ok(server_handle)
     }
@@ -203,7 +203,7 @@ impl Node {
     /// A Result containing the JoinHandle for the server.
     ///
     pub async fn serve(&self) -> Result<JoinHandle<Result<()>>> {
-        info!("#{:X}: Initializing node on {}", self.id, self.pub_addr);
+        info!("#{:016X}: Initializing node on {}", self.id, self.pub_addr);
         self.change_state(NodeState::Initializing).await;
         let server_handle = self.initialize_server().await?;
 
@@ -222,7 +222,7 @@ impl Node {
     /// An empty Result.
     ///
     pub async fn route_with_state(self, leaf: Vec<NodeInfo>, table: Vec<NodeInfo>) -> Result<()> {
-        info!("#{:X}: Updating connections", self.id);
+        info!("#{:016X}: Updating connections", self.id);
         self.change_state(NodeState::UpdatingConnections).await;
 
         let mut state_data = self.state.data.write().await;
@@ -234,7 +234,7 @@ impl Node {
         self.update_leaf_set(&mut state_data, &leaf_entries).await?;
 
         self.change_state(NodeState::RoutingRequests).await;
-        info!("#{:X}: Connected to network", self.id);
+        info!("#{:016X}: Connected to network", self.id);
         Ok(())
     }
 
@@ -255,7 +255,7 @@ impl Node {
 
     /// Connects to bootstrap node.
     async fn connect_to_network(&self, bootstrap_addr: &str) -> Result<()> {
-        info!("#{:X}: Connecting to network", self.id);
+        info!("#{:016X}: Connecting to network", self.id);
 
         let mut state_data = self.state.data.write().await;
 
@@ -289,14 +289,14 @@ impl Node {
     where
         T: IntoIterator<Item = &'a NodeEntry>,
     {
-        info!("#{:X}: Updating leaf set", self.id);
+        info!("#{:016X}: Updating leaf set", self.id);
         for entry in entries.into_iter() {
             state_data
                 .leaf
                 .insert(entry.id, NodeInfo::from_node_entry(entry))?;
         }
-        info!("#{:X}: Updated leaf set", self.id);
-        debug!("#{:X}: Leaf set updated: \n{}", self.id, state_data.leaf);
+        info!("#{:016X}: Updated leaf set", self.id);
+        debug!("#{:016X}: Leaf set updated: \n{}", self.id, state_data.leaf);
 
         Ok(())
     }
@@ -309,15 +309,15 @@ impl Node {
     where
         T: IntoIterator<Item = &'a NodeEntry>,
     {
-        info!("#{:X}: Updating routing table", self.id);
+        info!("#{:016X}: Updating routing table", self.id);
         for entry in entries.into_iter() {
             state_data
                 .table
                 .insert(entry.id, NodeInfo::from_node_entry(entry))?;
         }
-        info!("#{:X}: Updated routing table", self.id);
+        info!("#{:016X}: Updated routing table", self.id);
         debug!(
-            "#{:X}: Routing table updated: \n{}",
+            "#{:016X}: Routing table updated: \n{}",
             self.id, state_data.table
         );
         Ok(())
@@ -327,7 +327,7 @@ impl Node {
         &self,
         state_data: &mut RwLockWriteGuard<'_, StateData>,
     ) -> Result<()> {
-        info!("#{:X}: Announcing arrival to all neighbors", self.id);
+        info!("#{:016X}: Announcing arrival to all neighbors", self.id);
         let announce_arrival_request = AnnounceArrivalRequest {
             id: self.id,
             pub_addr: self.pub_addr.clone(),
@@ -350,7 +350,7 @@ impl Node {
                     .await?;
             }
         }
-        info!("#{:X}: Announced arrival to all neighbors", self.id);
+        info!("#{:016X}: Announced arrival to all neighbors", self.id);
 
         Ok(())
     }
