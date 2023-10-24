@@ -12,6 +12,7 @@ use super::shared::KeyValuePair;
 /// of the node's closests neighbors (that have the closest IDs).
 #[derive(Debug, Clone)]
 pub struct LeafSet<T: Clone> {
+    k: usize,
     max_size: usize,
     node_idx: usize,
     first_idx: usize,
@@ -38,6 +39,7 @@ impl<T: Clone> LeafSet<T> {
         }
 
         Ok(Self {
+            k,
             max_size: 2 * k + 1,
             node_idx: 0,
             first_idx: 0,
@@ -199,48 +201,31 @@ impl<T: Clone> LeafSet<T> {
     ///
     /// An `Ok(())` result if the insertion was successful.
     ///
-    /// # Errors
-    ///
-    /// An error is returned if:
-    ///
-    /// * Key is outside the set, indicating an internal error.
-    ///
     pub fn insert(&mut self, key: u64, value: T) -> Result<()> {
         let new_pair = KeyValuePair::new(key, value);
 
-        if !self.is_full() {
-            let position = match self.set.binary_search_by(|pair| pair.key.cmp(&key)) {
-                Ok(position) => position,
-                Err(position) => position,
-            };
+        let position = match self.set.binary_search_by(|pair| pair.key.cmp(&key)) {
+            Ok(position) => position,
+            Err(position) => position,
+        };
 
-            self.set.insert(position, new_pair);
+        if position < self.set.len() && self.set[position].key == key {
+            return Ok(());
+        }
 
-            if position <= self.node_idx {
-                self.node_idx += 1;
-            }
-        } else {
-            let position = self
-                .find_owner(key)
-                .ok_or(Error::Internal("key cannot be outside set".into()))?;
+        self.set.insert(position, new_pair);
 
-            let replaced_index = if self.is_index_clockwise_neighbor(position).unwrap() {
-                self.last_idx
-            } else {
-                self.first_idx
-            };
+        if position <= self.node_idx {
+            self.node_idx += 1;
+        }
 
-            let id = self.set[self.node_idx].key;
+        if self.set.len() > self.max_size {
+            let out_of_bounds_index = (self.node_idx + self.k + 1) % self.set.len();
+            self.set.remove(out_of_bounds_index);
 
-            if key > id && replaced_index < self.node_idx {
+            if out_of_bounds_index <= self.node_idx {
                 self.node_idx -= 1;
-            } else if key < id && replaced_index > self.node_idx {
-                self.node_idx += 1;
             }
-
-            self.set[replaced_index] = new_pair;
-
-            self.set.sort_by_key(|e| e.key);
         }
 
         if self.is_full() {
@@ -493,8 +478,6 @@ mod tests {
         assert_eq!(set_to_vec(&leaf), vec![0, 2, 4, 6]);
         leaf.insert(8, None)?;
         assert_eq!(set_to_vec(&leaf), vec![0, 2, 4, 6, 8]);
-
-        assert_eq!(leaf.insert(5, None).is_err(), true);
 
         leaf.insert(3, None)?;
         assert_eq!(set_to_vec(&leaf), vec![0, 2, 3, 6, 8]);
