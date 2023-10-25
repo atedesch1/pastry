@@ -421,4 +421,55 @@ impl Node {
             }
         }
     }
+
+    pub async fn fix_leaf_entry(&self, node: &NodeInfo) -> Result<()> {
+        info!("#{:016X}: Fixing leaf set", self.id);
+
+        let mut data = self.state.data.write().await;
+
+        match data.leaf.is_clockwise_neighbor(node.id) {
+            Err(_) => {}
+            Ok(is_clockwise_neighbor) => {
+                // iterator without failed node
+                let forward_iterator = data.leaf.clone().into_iter().filter(|e| e.id != node.id);
+
+                // yield only the ones on the same side as the failed node
+                let nodes_on_the_same_side: Vec<NodeInfo> = if !is_clockwise_neighbor {
+                    forward_iterator.take_while(|e| e.id != self.id).collect()
+                } else {
+                    forward_iterator
+                        .rev()
+                        .take_while(|e| e.id != self.id)
+                        .collect()
+                };
+
+                // grab furthest leaf entry in the same side as the failed one
+                let furthest_node = nodes_on_the_same_side.get(0).ok_or(Error::Internal(
+                    "not enough nodes on the same side as failed node".into(),
+                ))?;
+
+                // remove leaf entry
+                data.leaf.remove(node.id).unwrap();
+
+                // call get_state and replace entry
+                let mut client =
+                    NodeServiceClient::connect(furthest_node.pub_addr.to_owned()).await?;
+                let state = client.get_node_state(()).await?.into_inner();
+
+                for entry in state.leaf_set {
+                    if entry.id != node.id {
+                        data.leaf
+                            .insert(entry.id, NodeInfo::from_node_entry(&entry))?;
+                        if data.leaf.is_full() {
+                            break;
+                        }
+                    }
+                }
+
+                debug!("#{:016X}: Fixed leaf set: \n{}", self.id, data.leaf);
+            }
+        }
+
+        Ok(())
+    }
 }
