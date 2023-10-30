@@ -50,3 +50,7 @@ message AnnounceArrivalRequest {
   string pub_addr = 2;
 }
 
+message FixLeafSetRequest {
+  uint64 id = 1;
+  string pub_addr = 2;
+}

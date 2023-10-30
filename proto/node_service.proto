@@ -17,4 +17,5 @@ service NodeService {
 
   // UPDATE NEIGHBORS
   rpc AnnounceArrival(AnnounceArrivalRequest) returns (google.protobuf.Empty);
+  rpc FixLeafSet(FixLeafSetRequest) returns (google.protobuf.Empty);
 }

@@ -1,15 +1,18 @@
-use log::info;
+use log::{info, warn};
 use tonic::{Request, Response, Status};
 
 use crate::{
     dht::node::{Node, NodeState},
+    error::Error,
     rpc::node::{
-        node_service_server::NodeService, AnnounceArrivalRequest, GetNodeIdResponse,
-        GetNodeStateResponse, JoinRequest, JoinResponse, LeaveRequest, NodeEntry, QueryRequest,
-        QueryResponse,
+        node_service_client::NodeServiceClient, node_service_server::NodeService,
+        AnnounceArrivalRequest, FixLeafSetRequest, GetNodeIdResponse, GetNodeStateResponse,
+        JoinRequest, JoinResponse, LeaveRequest, NodeEntry, QueryRequest, QueryResponse,
     },
     util::{self, U64_HEX_NUM_OF_DIGITS},
 };
+
+use super::node::NodeInfo;
 
 #[tonic::async_trait]
 impl NodeService for super::node::Node {
@@ -70,17 +73,10 @@ impl NodeService for super::node::Node {
                     None => break,
                 }
             }
+            routing_table.push(self.get_info().to_node_entry());
         }
-        routing_table.push(self.get_info().to_node_entry());
 
-        let node = self
-            .state
-            .data
-            .read()
-            .await
-            .leaf
-            .get(req.id)
-            .map(|e| e.clone());
+        let node = self.route_with_leaf_set(req.id).await;
 
         if let Some(node) = node {
             // Route using leaf set
@@ -126,6 +122,7 @@ impl NodeService for super::node::Node {
                 routing_table,
             }));
         }
+
         let (mut client, matched_digits) = {
             let data = self.state.data.read().await;
             match data.table.route(req.id, req.matched_digits as usize + 1)? {
@@ -168,52 +165,18 @@ impl NodeService for super::node::Node {
 
         let req = request.get_ref();
 
-        let node = self
-            .state
-            .data
-            .read()
-            .await
-            .leaf
-            .get(req.key)
-            .map(|e| e.clone());
-
-        if let Some(node) = node {
-            if node.id != self.id {
-                // Forward request using leaf set
-                let mut client = Node::connect_with_retry(&node.pub_addr).await?;
-                return client
-                    .query(QueryRequest {
-                        from_id: self.id,
-                        key: req.key,
-                        matched_digits: util::get_num_matched_digits(node.id, req.key)?,
-                    })
-                    .await;
-            }
-
-            // Node is the owner of key
-            return Ok(Response::new(QueryResponse { id: self.id }));
+        if let Some(res) = self.query_with_leaf_set(req.key).await? {
+            return Ok(res);
         }
 
-        let (mut client, matched_digits) = {
-            let data = self.state.data.read().await;
-            match data.table.route(req.key, req.matched_digits as usize + 1)? {
-                // Forward request using routing table
-                Some((info, matched)) => (Node::connect_with_retry(&info.pub_addr).await?, matched),
-                // Forward request using closest leaf node
-                None => {
-                    let (closest, matched) = data.leaf.get_closest(req.key)?;
-                    (Node::connect_with_retry(&closest.pub_addr).await?, matched)
-                }
-            }
-        };
+        if let Some(res) = self
+            .query_with_routing_table(req.key, req.matched_digits as usize + 1)
+            .await?
+        {
+            return Ok(res);
+        }
 
-        client
-            .query(Request::new(QueryRequest {
-                from_id: self.id,
-                matched_digits: matched_digits as u32,
-                key: req.key,
-            }))
-            .await
+        self.query_with_closest_from_leaf_set(req.key).await
     }
 
     async fn announce_arrival(
@@ -252,5 +215,131 @@ impl NodeService for super::node::Node {
 
         self.change_state(NodeState::RoutingRequests).await;
         Ok(Response::new(()))
+    }
+
+    async fn fix_leaf_set(
+        &self,
+        request: Request<FixLeafSetRequest>,
+    ) -> std::result::Result<Response<()>, Status> {
+        info!("#{:016X}: Got request for fix_leaf_set", self.id);
+        self.block_until_routing_requests().await;
+
+        let req = request.get_ref();
+
+        if let None = self.state.data.read().await.leaf.get(req.id) {
+            return Ok(Response::new(()));
+        }
+
+        let node = NodeInfo {
+            id: req.id,
+            pub_addr: req.pub_addr.clone(),
+        };
+
+        self.fix_leaf_entry(&node).await?;
+
+        Ok(Response::new(()))
+    }
+}
+
+// Helper functions
+impl Node {
+    async fn query_with_leaf_set(
+        &self,
+        key: u64,
+    ) -> std::result::Result<Option<Response<QueryResponse>>, Status> {
+        loop {
+            let node = match self.route_with_leaf_set(key).await {
+                Some(node) => node,
+                None => return Ok(None),
+            };
+
+            if node.id == self.id {
+                // Node is the owner of key
+                return Ok(Some(Response::new(QueryResponse { id: self.id })));
+            }
+
+            // Forward request using leaf set
+            match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
+                Ok(mut client) => {
+                    match client
+                        .query(QueryRequest {
+                            from_id: self.id,
+                            key,
+                            matched_digits: util::get_num_matched_digits(node.id, key)?,
+                        })
+                        .await
+                    {
+                        Ok(r) => return Ok(Some(r)),
+                        Err(err) => self.warn_and_fix_leaf_entry(&node, &err.to_string()).await,
+                    }
+                }
+                Err(err) => self.warn_and_fix_leaf_entry(&node, &err.to_string()).await,
+            }
+        }
+    }
+
+    async fn query_with_routing_table(
+        &self,
+        key: u64,
+        min_matched_digits: usize,
+    ) -> std::result::Result<Option<Response<QueryResponse>>, Status> {
+        loop {
+            let (node, matched_digits) =
+                match self.route_with_routing_table(key, min_matched_digits).await {
+                    Some(res) => res,
+                    None => return Ok(None),
+                };
+
+            match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
+                Ok(mut client) => {
+                    match client
+                        .query(Request::new(QueryRequest {
+                            from_id: self.id,
+                            matched_digits: matched_digits as u32,
+                            key,
+                        }))
+                        .await
+                    {
+                        Ok(r) => return Ok(Some(r)),
+                        // Err(err) => self.warn_and_fix_table_entry(&node, &err.to_string()).await,
+                        Err(err) => {
+                            self.warn_and_fix_table_entry(&node, &err.to_string()).await;
+                            return Ok(None);
+                        }
+                    }
+                }
+                // Err(err) => self.warn_and_fix_table_entry(&node, &err.to_string()).await,
+                Err(err) => {
+                    self.warn_and_fix_table_entry(&node, &err.to_string()).await;
+                    return Ok(None);
+                }
+            }
+        }
+    }
+
+    async fn query_with_closest_from_leaf_set(
+        &self,
+        key: u64,
+    ) -> std::result::Result<Response<QueryResponse>, Status> {
+        loop {
+            let (node, matched_digits) = self.get_closest_from_leaf_set(key).await;
+
+            match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
+                Ok(mut client) => {
+                    match client
+                        .query(QueryRequest {
+                            from_id: self.id,
+                            key,
+                            matched_digits: matched_digits as u32,
+                        })
+                        .await
+                    {
+                        Ok(r) => return Ok(r),
+                        Err(err) => self.warn_and_fix_leaf_entry(&node, &err.to_string()).await,
+                    }
+                }
+                Err(err) => self.warn_and_fix_leaf_entry(&node, &err.to_string()).await,
+            }
+        }
     }
 }
