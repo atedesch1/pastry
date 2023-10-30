@@ -69,7 +69,7 @@ impl<T: Clone> RoutingTable<T> {
 
     /// Returns the next node to route the request to in the Pastry algorithm and the number of
     /// matched digits.
-    pub fn route(&self, key: u64, min_matched_digits: usize) -> Result<Option<(T, usize)>> {
+    pub fn route(&self, key: u64, min_matched_digits: usize) -> Result<Option<(&T, usize)>> {
         if min_matched_digits > self.table.len() - 1 {
             return Ok(None);
         }
@@ -101,17 +101,22 @@ impl<T: Clone> RoutingTable<T> {
             }
         }
 
-        Ok(closest.clone().map(|kv| (kv.value, row_index)))
+        Ok(closest.as_ref().map(|kv| (&kv.value, row_index)))
     }
 
     /// Returns an Option containing a row of the routing table if it exists.
-    pub fn get_row(&self, index: usize) -> Option<&Vec<Option<KeyValuePair<u64, T>>>> {
-        self.table.get(index)
+    pub fn get_row(&self, index: usize) -> Option<Vec<Option<&T>>> {
+        self.table
+            .get(index)
+            .map(|v| v.iter().map(|e| e.as_ref().map(|kv| &kv.value)).collect())
     }
 
     /// Returns an Vector containing all entries of the routing table.
-    pub fn get_entries(&self) -> Vec<&Option<KeyValuePair<u64, T>>> {
-        self.table.iter().flat_map(|row| row.iter()).collect()
+    pub fn get_entries(&self) -> Vec<Option<&T>> {
+        self.table
+            .iter()
+            .flat_map(|row| row.iter().map(|e| e.as_ref().map(|kv| &kv.value)))
+            .collect()
     }
 }
 
@@ -199,11 +204,20 @@ mod tests {
         t.insert(kv4.key, kv4.value)?;
 
         let key = 0xFEDCBA0111111111;
-        assert_eq!(t.route(key, 0)?.unwrap(), (kv1.value, 6));
-        assert_eq!(t.route(key, 6)?.unwrap(), (kv1.value, 6));
+        assert_eq!(
+            t.route(key, 0)?.map(|e| (e.0.clone(), e.1)).unwrap(),
+            (kv1.value, 6)
+        );
+        assert_eq!(
+            t.route(key, 6)?.map(|e| (e.0.clone(), e.1)).unwrap(),
+            (kv1.value, 6)
+        );
 
         let key = 0xFEDCBA3333333333;
-        assert_eq!(t.route(key, 0)?.unwrap(), (kv4.value, 6));
+        assert_eq!(
+            t.route(key, 0)?.map(|e| (e.0.clone(), e.1)).unwrap(),
+            (kv4.value, 6)
+        );
 
         Ok(())
     }

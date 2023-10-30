@@ -66,7 +66,7 @@ impl NodeService for super::node::Node {
                     Some(row) => {
                         for entry in row {
                             if let Some(entry) = entry {
-                                routing_table.push(entry.value.clone().to_node_entry());
+                                routing_table.push(entry.clone().to_node_entry());
                             }
                         }
                     }

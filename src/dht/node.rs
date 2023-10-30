@@ -308,6 +308,7 @@ impl Node {
             .await
             .table
             .route(key, min_matched_digits)
+            .map(|e| e.map(|f| (f.0.clone(), f.1)))
             .unwrap()
     }
 
@@ -374,7 +375,7 @@ impl Node {
 
         for entry in state_data.table.get_entries() {
             if let Some(entry) = entry {
-                let mut client = Node::connect_with_retry(&entry.value.pub_addr).await?;
+                let mut client = Node::connect_with_retry(&entry.pub_addr).await?;
                 client
                     .announce_arrival(announce_arrival_request.clone())
                     .await?;
