@@ -14,8 +14,10 @@ use crate::{
     rpc::node::{
         node_service_client::NodeServiceClient,
         node_service_server::{NodeService, NodeServiceServer},
-        AnnounceArrivalRequest, FixLeafSetRequest, JoinRequest, NodeEntry,
+        AnnounceArrivalRequest, FixLeafSetRequest, GetNodeTableEntryRequest, JoinRequest,
+        NodeEntry,
     },
+    util::{self, U64_HEX_NUM_OF_DIGITS},
 };
 
 #[derive(Debug, Clone)]
@@ -477,21 +479,23 @@ impl Node {
 
                     // replace entry
                     for entry in state.leaf_set {
-                        if entry.id != neighbor.id && entry.id != node.id {
-                            // check if entry is alive
-                            if let Err(err) =
-                                NodeServiceClient::connect(entry.pub_addr.to_owned()).await
-                            {
-                                warn!(
-                                    "#{:016X}: Connection to #{:016X} failed: {}",
-                                    self.id, entry.id, err
-                                );
-                                continue;
-                            }
-
-                            data.leaf
-                                .insert(entry.id, NodeInfo::from_node_entry(&entry))?;
+                        if entry.id == neighbor.id || entry.id == node.id {
+                            continue;
                         }
+
+                        // check if entry is alive
+                        if let Err(err) =
+                            NodeServiceClient::connect(entry.pub_addr.to_owned()).await
+                        {
+                            warn!(
+                                "#{:016X}: Connection to #{:016X} failed: {}",
+                                self.id, entry.id, err
+                            );
+                            continue;
+                        }
+
+                        data.leaf
+                            .insert(entry.id, NodeInfo::from_node_entry(&entry))?;
                     }
 
                     // break if already fixed leaf set
@@ -510,6 +514,74 @@ impl Node {
 
                 debug!("#{:016X}: Fixed leaf set: \n{}", self.id, data.leaf);
             }
+        }
+
+        self.change_state(NodeState::RoutingRequests).await;
+        Ok(())
+    }
+
+    pub async fn fix_table_entry(&self, node: &NodeInfo) -> Result<()> {
+        info!("#{:016X}: Fixing routing table", self.id);
+        self.change_state(NodeState::UpdatingConnections).await;
+
+        let mut data = self.state.data.write().await;
+
+        // remove node from table
+        data.table.remove(node.id)?;
+
+        let matched_digits = util::get_num_matched_digits(self.id, node.id)?;
+        let mut matched = matched_digits;
+        let replacement = 'outer: loop {
+            let row = data.table.get_row(matched as usize);
+            if row.is_none() {
+                break None;
+            }
+
+            for entry in row.unwrap() {
+                if entry.is_none() || entry.unwrap().id == node.id {
+                    continue;
+                }
+
+                let entry = entry.unwrap();
+
+                let mut client = match NodeServiceClient::connect(entry.pub_addr.to_owned()).await {
+                    Ok(client) => client,
+                    Err(err) => {
+                        warn!(
+                            "#{:016X}: Connection to #{:016X} failed: {}",
+                            self.id, entry.id, err
+                        );
+                        continue;
+                    }
+                };
+
+                let table_entry = client
+                    .get_node_table_entry(GetNodeTableEntryRequest {
+                        row: matched_digits,
+                        column: util::get_nth_digit_in_u64_hex(
+                            node.id,
+                            matched_digits as usize + 1,
+                        )?,
+                    })
+                    .await?
+                    .into_inner()
+                    .node;
+
+                if table_entry.is_some() && table_entry.clone().unwrap().id != node.id {
+                    break 'outer table_entry;
+                }
+            }
+
+            matched += 1;
+            if matched == U64_HEX_NUM_OF_DIGITS {
+                break None;
+            }
+        };
+
+        if let Some(replacement) = replacement {
+            data.table
+                .insert(replacement.id, NodeInfo::from_node_entry(&replacement))?;
+            debug!("#{:016X}: Fixed routing table: \n{}", self.id, data.table);
         }
 
         self.change_state(NodeState::RoutingRequests).await;
@@ -551,6 +623,9 @@ impl Node {
             "#{:016X}: Connection to #{:016X} failed: {}",
             self.id, node.id, err
         );
-        // let _ = self.fix_table_entry(&node).await;
+
+        let curr_node = self.clone();
+        let failed_node = node.clone();
+        tokio::spawn(async move { curr_node.fix_table_entry(&failed_node).await });
     }
 }

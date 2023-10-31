@@ -9,6 +9,7 @@ service NodeService {
   // DEBUG
   rpc GetNodeId(google.protobuf.Empty) returns (GetNodeIdResponse);
   rpc GetNodeState(google.protobuf.Empty) returns (GetNodeStateResponse);
+  rpc GetNodeTableEntry(GetNodeTableEntryRequest) returns (GetNodeTableEntryResponse);
 
   // MAIN REQUESTS
   rpc Join(JoinRequest) returns (JoinResponse);

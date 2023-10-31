@@ -1,4 +1,4 @@
-use log::{info, warn};
+use log::info;
 use tonic::{Request, Response, Status};
 
 use crate::{
@@ -7,7 +7,8 @@ use crate::{
     rpc::node::{
         node_service_client::NodeServiceClient, node_service_server::NodeService,
         AnnounceArrivalRequest, FixLeafSetRequest, GetNodeIdResponse, GetNodeStateResponse,
-        JoinRequest, JoinResponse, LeaveRequest, NodeEntry, QueryRequest, QueryResponse,
+        GetNodeTableEntryRequest, GetNodeTableEntryResponse, JoinRequest, JoinResponse,
+        LeaveRequest, NodeEntry, QueryRequest, QueryResponse,
     },
     util::{self, U64_HEX_NUM_OF_DIGITS},
 };
@@ -76,73 +77,26 @@ impl NodeService for super::node::Node {
             routing_table.push(self.get_info().to_node_entry());
         }
 
-        let node = self.route_with_leaf_set(req.id).await;
-
-        if let Some(node) = node {
-            // Route using leaf set
-
-            if node.id != self.id {
-                // Forward to neighbor in leaf set
-                let mut client = Node::connect_with_retry(&node.pub_addr).await?;
-                return client
-                    .join(Request::new(JoinRequest {
-                        id: req.id,
-                        pub_addr: req.pub_addr.clone(),
-                        matched_digits: util::get_num_matched_digits(node.id, req.id)?,
-                        routing_table,
-                    }))
-                    .await;
-            }
-            // Current node is closest previous to joining node
-
-            let data = self.state.data.read().await;
-            let leaf_set = {
-                let mut leaf = data.leaf.clone();
-
-                // Remove left most neighbor if leaf set is full
-                if leaf.is_full() {
-                    leaf.remove(
-                        data.leaf
-                            .get_furthest_counter_clockwise_neighbor()
-                            .unwrap()
-                            .id,
-                    )?;
-                }
-
-                leaf.get_set()
-                    .iter()
-                    .map(|&e| e.clone().to_node_entry())
-                    .collect()
-            };
-
-            return Ok(Response::new(JoinResponse {
-                id: self.id,
-                pub_addr: self.pub_addr.clone(),
-                leaf_set,
-                routing_table,
-            }));
+        if let Some(res) = self
+            .join_with_leaf_set(req.id, &req.pub_addr, &routing_table)
+            .await?
+        {
+            return Ok(res);
         }
 
-        let (mut client, matched_digits) = {
-            let data = self.state.data.read().await;
-            match data.table.route(req.id, req.matched_digits as usize + 1)? {
-                // Forward request using routing table
-                Some((info, matched)) => (Node::connect_with_retry(&info.pub_addr).await?, matched),
-                // Forward request using closest leaf node
-                None => {
-                    let (closest, matched) = data.leaf.get_closest(req.id)?;
-                    (Node::connect_with_retry(&closest.pub_addr).await?, matched)
-                }
-            }
-        };
+        if let Some(res) = self
+            .join_with_routing_table(
+                req.id,
+                &req.pub_addr,
+                &routing_table,
+                req.matched_digits as usize + 1,
+            )
+            .await?
+        {
+            return Ok(res);
+        }
 
-        client
-            .join(Request::new(JoinRequest {
-                id: req.id,
-                pub_addr: req.pub_addr.clone(),
-                matched_digits: matched_digits as u32,
-                routing_table,
-            }))
+        self.join_with_closest_from_leaf_set(req.id, &req.pub_addr, &routing_table)
             .await
     }
 
@@ -239,10 +193,161 @@ impl NodeService for super::node::Node {
 
         Ok(Response::new(()))
     }
+
+    async fn get_node_table_entry(
+        &self,
+        request: Request<GetNodeTableEntryRequest>,
+    ) -> std::result::Result<Response<GetNodeTableEntryResponse>, Status> {
+        info!("#{:016X}: Got request for get_node_table_entry", self.id);
+        self.block_until_routing_requests().await;
+
+        let req = request.get_ref();
+
+        let node = match self.state.data.read().await.table.get_row(req.row as usize) {
+            Some(row) => row[req.column as usize].map(|node| node.clone().to_node_entry()),
+            None => None,
+        };
+
+        Ok(Response::new(GetNodeTableEntryResponse { node }))
+    }
 }
 
 // Helper functions
 impl Node {
+    // JOIN
+    async fn join_with_leaf_set(
+        &self,
+        id: u64,
+        pub_addr: &str,
+        routing_table: &Vec<NodeEntry>,
+    ) -> std::result::Result<Option<Response<JoinResponse>>, Status> {
+        loop {
+            let node = match self.route_with_leaf_set(id).await {
+                Some(node) => node,
+                None => return Ok(None),
+            };
+
+            if node.id == self.id {
+                // Current node is closest previous to joining node
+                let data = self.state.data.read().await;
+                let leaf_set = {
+                    let mut leaf = data.leaf.clone();
+
+                    // Remove left most neighbor if leaf set is full
+                    if leaf.is_full() {
+                        leaf.remove(
+                            data.leaf
+                                .get_furthest_counter_clockwise_neighbor()
+                                .unwrap()
+                                .id,
+                        )?;
+                    }
+
+                    leaf.get_set()
+                        .iter()
+                        .map(|&e| e.clone().to_node_entry())
+                        .collect()
+                };
+
+                return Ok(Some(Response::new(JoinResponse {
+                    id: self.id,
+                    pub_addr: self.pub_addr.to_string(),
+                    leaf_set,
+                    routing_table: routing_table.to_owned(),
+                })));
+            }
+
+            // Forward to neighbor in leaf set
+            let err: Error = match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
+                Ok(mut client) => {
+                    match client
+                        .join(Request::new(JoinRequest {
+                            id,
+                            pub_addr: pub_addr.to_string(),
+                            matched_digits: util::get_num_matched_digits(node.id, id)?,
+                            routing_table: routing_table.to_vec(),
+                        }))
+                        .await
+                    {
+                        Ok(r) => return Ok(Some(r)),
+                        Err(err) => err.into(),
+                    }
+                }
+                Err(err) => err.into(),
+            };
+
+            self.warn_and_fix_leaf_entry(&node, &err.to_string()).await;
+        }
+    }
+
+    async fn join_with_routing_table(
+        &self,
+        id: u64,
+        pub_addr: &str,
+        routing_table: &Vec<NodeEntry>,
+        min_matched_digits: usize,
+    ) -> std::result::Result<Option<Response<JoinResponse>>, Status> {
+        let (node, matched_digits) =
+            match self.route_with_routing_table(id, min_matched_digits).await {
+                Some(res) => res,
+                None => return Ok(None),
+            };
+
+        let err: Error = match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
+            Ok(mut client) => {
+                match client
+                    .join(Request::new(JoinRequest {
+                        id,
+                        pub_addr: pub_addr.to_string(),
+                        matched_digits: matched_digits as u32,
+                        routing_table: routing_table.to_vec(),
+                    }))
+                    .await
+                {
+                    Ok(r) => return Ok(Some(r)),
+                    Err(err) => err.into(),
+                }
+            }
+            Err(err) => err.into(),
+        };
+
+        self.warn_and_fix_table_entry(&node, &err.to_string()).await;
+
+        Ok(None)
+    }
+
+    async fn join_with_closest_from_leaf_set(
+        &self,
+        id: u64,
+        pub_addr: &str,
+        routing_table: &Vec<NodeEntry>,
+    ) -> std::result::Result<Response<JoinResponse>, Status> {
+        loop {
+            let (node, matched_digits) = self.get_closest_from_leaf_set(id).await;
+
+            let err: Error = match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
+                Ok(mut client) => {
+                    match client
+                        .join(Request::new(JoinRequest {
+                            id,
+                            pub_addr: pub_addr.to_string(),
+                            matched_digits: matched_digits as u32,
+                            routing_table: routing_table.to_vec(),
+                        }))
+                        .await
+                    {
+                        Ok(r) => return Ok(r),
+                        Err(err) => err.into(),
+                    }
+                }
+                Err(err) => err.into(),
+            };
+
+            self.warn_and_fix_leaf_entry(&node, &err.to_string()).await;
+        }
+    }
+
+    // QUERY
     async fn query_with_leaf_set(
         &self,
         key: u64,
@@ -258,8 +363,8 @@ impl Node {
                 return Ok(Some(Response::new(QueryResponse { id: self.id })));
             }
 
-            // Forward request using leaf set
-            match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
+            // Forward query to neighbor in leaf set
+            let err: Error = match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
                 Ok(mut client) => {
                     match client
                         .query(QueryRequest {
@@ -270,11 +375,13 @@ impl Node {
                         .await
                     {
                         Ok(r) => return Ok(Some(r)),
-                        Err(err) => self.warn_and_fix_leaf_entry(&node, &err.to_string()).await,
+                        Err(err) => err.into(),
                     }
                 }
-                Err(err) => self.warn_and_fix_leaf_entry(&node, &err.to_string()).await,
-            }
+                Err(err) => err.into(),
+            };
+
+            self.warn_and_fix_leaf_entry(&node, &err.to_string()).await;
         }
     }
 
@@ -283,38 +390,32 @@ impl Node {
         key: u64,
         min_matched_digits: usize,
     ) -> std::result::Result<Option<Response<QueryResponse>>, Status> {
-        loop {
-            let (node, matched_digits) =
-                match self.route_with_routing_table(key, min_matched_digits).await {
-                    Some(res) => res,
-                    None => return Ok(None),
-                };
+        let (node, matched_digits) =
+            match self.route_with_routing_table(key, min_matched_digits).await {
+                Some(res) => res,
+                None => return Ok(None),
+            };
 
-            match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
-                Ok(mut client) => {
-                    match client
-                        .query(Request::new(QueryRequest {
-                            from_id: self.id,
-                            matched_digits: matched_digits as u32,
-                            key,
-                        }))
-                        .await
-                    {
-                        Ok(r) => return Ok(Some(r)),
-                        // Err(err) => self.warn_and_fix_table_entry(&node, &err.to_string()).await,
-                        Err(err) => {
-                            self.warn_and_fix_table_entry(&node, &err.to_string()).await;
-                            return Ok(None);
-                        }
-                    }
-                }
-                // Err(err) => self.warn_and_fix_table_entry(&node, &err.to_string()).await,
-                Err(err) => {
-                    self.warn_and_fix_table_entry(&node, &err.to_string()).await;
-                    return Ok(None);
+        let err: Error = match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
+            Ok(mut client) => {
+                match client
+                    .query(Request::new(QueryRequest {
+                        from_id: self.id,
+                        matched_digits: matched_digits as u32,
+                        key,
+                    }))
+                    .await
+                {
+                    Ok(r) => return Ok(Some(r)),
+                    Err(err) => err.into(),
                 }
             }
-        }
+            Err(err) => err.into(),
+        };
+
+        self.warn_and_fix_table_entry(&node, &err.to_string()).await;
+
+        Ok(None)
     }
 
     async fn query_with_closest_from_leaf_set(
@@ -324,7 +425,7 @@ impl Node {
         loop {
             let (node, matched_digits) = self.get_closest_from_leaf_set(key).await;
 
-            match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
+            let err: Error = match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
                 Ok(mut client) => {
                     match client
                         .query(QueryRequest {
@@ -335,11 +436,13 @@ impl Node {
                         .await
                     {
                         Ok(r) => return Ok(r),
-                        Err(err) => self.warn_and_fix_leaf_entry(&node, &err.to_string()).await,
+                        Err(err) => err.into(),
                     }
                 }
-                Err(err) => self.warn_and_fix_leaf_entry(&node, &err.to_string()).await,
-            }
+                Err(err) => err.into(),
+            };
+
+            self.warn_and_fix_leaf_entry(&node, &err.to_string()).await;
         }
     }
 }
