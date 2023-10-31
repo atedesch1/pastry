@@ -27,20 +27,20 @@ impl<T: Clone> RoutingTable<T> {
     }
 
     /// Inserts a value into the table, overwriting the previous if not empty.
-    pub fn insert(&mut self, id: u64, val: T) -> Result<()> {
-        let new_pair = KeyValuePair::new(id, val);
+    pub fn insert(&mut self, key: u64, value: T) -> Result<()> {
+        let new_pair = KeyValuePair::new(key, value);
 
         for i in 0..U64_HEX_NUM_OF_DIGITS as usize {
             let table_digit = get_nth_digit_in_u64_hex(self.id, i)?;
-            let id_digit = get_nth_digit_in_u64_hex(id, i)?;
+            let key_digit = get_nth_digit_in_u64_hex(key, i)?;
 
-            if table_digit != id_digit {
+            if table_digit != key_digit {
                 while self.table.len() < i + 1 {
                     // Push new rows to allow for new entry
                     self.table.push(vec![None; HEX_BASE as usize]);
                 }
 
-                self.table[i][id_digit as usize] = Some(new_pair);
+                self.table[i][key_digit as usize] = Some(new_pair);
                 break;
             }
         }
@@ -49,17 +49,17 @@ impl<T: Clone> RoutingTable<T> {
     }
 
     /// Removes a value from the table if it exists.
-    pub fn remove(&mut self, id: u64) -> Result<()> {
+    pub fn remove(&mut self, key: u64) -> Result<()> {
         for i in 0..U64_HEX_NUM_OF_DIGITS as usize {
             let table_digit = get_nth_digit_in_u64_hex(self.id, i)?;
-            let id_digit = get_nth_digit_in_u64_hex(id, i)?;
+            let key_digit = get_nth_digit_in_u64_hex(key, i)?;
 
             if i >= self.table.len() {
                 break;
             }
 
-            if table_digit != id_digit {
-                self.table[i][id_digit as usize] = None;
+            if table_digit != key_digit {
+                self.table[i][key_digit as usize] = None;
                 break;
             }
         }
