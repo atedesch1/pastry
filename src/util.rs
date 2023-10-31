@@ -30,7 +30,7 @@ pub fn get_first_digits_in_u64_hex(num: u64, n: usize) -> Result<u64> {
 
 /// Gets the nth hexadecimal digit from a u64.
 pub fn get_nth_digit_in_u64_hex(num: u64, n: usize) -> Result<u32> {
-    if n >= 16 {
+    if n > 15 {
         return Err(crate::error::Error::Internal(
             "There are only 16 digits in a hexadecimal number.".into(),
         ));
