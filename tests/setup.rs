@@ -2,8 +2,9 @@ use core::fmt;
 
 use log::warn;
 use pastry_dht::{
-    dht::node::{Node, NodeInfo, PastryConfig},
+    dht::node::{Node, NodeInfo},
     error::Result,
+    pastry::shared::Config,
     rpc::node::node_service_client::NodeServiceClient,
     util::get_neighbors,
 };
@@ -14,7 +15,7 @@ use tonic::transport::Channel;
 #[derive(Clone)]
 pub struct NetworkConfiguration {
     pub num_nodes: u32,
-    pub pastry_conf: PastryConfig,
+    pub pastry_conf: Config,
 }
 
 impl fmt::Display for NetworkConfiguration {
@@ -22,7 +23,7 @@ impl fmt::Display for NetworkConfiguration {
         write!(
             f,
             "Network Configuration: num_nodes={}, config=(k={})\n",
-            self.num_nodes, self.pastry_conf.leaf_set_k,
+            self.num_nodes, self.pastry_conf.k,
         )
     }
 }
@@ -200,7 +201,7 @@ impl Network {
             if let Some(node) = nodes.pop() {
                 let idx = nodes.len();
                 let leaf_set: Vec<NodeInfo> =
-                    get_neighbors(&self.nodes, idx, self.conf.pastry_conf.leaf_set_k)
+                    get_neighbors(&self.nodes, idx, self.conf.pastry_conf.k)
                         .iter()
                         .map(|f| f.info.clone())
                         .filter(|f| f.id != node.id)

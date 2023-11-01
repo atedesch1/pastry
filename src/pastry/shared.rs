@@ -17,3 +17,14 @@ impl<T, U> KeyValuePair<T, U> {
         &self.value
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct Config {
+    pub k: usize,
+}
+
+impl Config {
+    pub fn new(leaf_set_k: usize) -> Self {
+        Config { k: leaf_set_k }
+    }
+}

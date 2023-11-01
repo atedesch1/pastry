@@ -1,8 +1,4 @@
-use pastry_dht::{
-    dht::node::{Node, PastryConfig},
-    error::Result,
-    util::get_neighbors,
-};
+use pastry_dht::{dht::node::Node, error::Result, pastry::shared::Config, util::get_neighbors};
 
 mod setup;
 mod util;
@@ -15,7 +11,7 @@ async fn test_join() -> Result<()> {
     for k in vec![1, 4, 16] {
         for num_of_nodes in vec![1, 4, 16, 64] {
             let network = Network::new(NetworkConfiguration {
-                pastry_conf: PastryConfig { leaf_set_k: k },
+                pastry_conf: Config::new(k),
                 num_nodes: num_of_nodes,
             })
             .init_by_join()
@@ -31,11 +27,10 @@ async fn test_join() -> Result<()> {
                     .map(|f| f.id)
                     .collect::<Vec<u64>>();
                 leaf_set.sort();
-                let mut neighbors =
-                    get_neighbors(&network.nodes, idx, network.conf.pastry_conf.leaf_set_k)
-                        .iter()
-                        .map(|f| f.info.id)
-                        .collect::<Vec<u64>>();
+                let mut neighbors = get_neighbors(&network.nodes, idx, network.conf.pastry_conf.k)
+                    .iter()
+                    .map(|f| f.info.id)
+                    .collect::<Vec<u64>>();
                 neighbors.sort();
 
                 assert_eq!(

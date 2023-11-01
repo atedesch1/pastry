@@ -3,8 +3,9 @@ mod util;
 
 use log::info;
 use pastry_dht::{
-    dht::node::{Node, NodeInfo, PastryConfig},
+    dht::node::{Node, NodeInfo},
     error::Result,
+    pastry::shared::Config,
     rpc::node::QueryRequest,
     util::get_neighbors,
 };
@@ -14,7 +15,7 @@ use setup::*;
 #[tokio::test(flavor = "multi_thread")]
 async fn test_fail() -> Result<()> {
     let mut network = Network::new(NetworkConfiguration {
-        pastry_conf: PastryConfig { leaf_set_k: 2 },
+        pastry_conf: Config::new(2),
         // num_nodes: 8,
         num_nodes: 100,
     })
@@ -28,15 +29,12 @@ async fn test_fail() -> Result<()> {
         let node_info = node.info.clone();
 
         // get node neighbors without itself
-        let prev_neighbors = get_neighbors(
-            &network.nodes,
-            random_index,
-            network.conf.pastry_conf.leaf_set_k,
-        )
-        .iter()
-        .map(|&f| f.info.clone())
-        .filter(|f| f.id != node.info.id)
-        .collect::<Vec<NodeInfo>>();
+        let prev_neighbors =
+            get_neighbors(&network.nodes, random_index, network.conf.pastry_conf.k)
+                .iter()
+                .map(|&f| f.info.clone())
+                .filter(|f| f.id != node.info.id)
+                .collect::<Vec<NodeInfo>>();
 
         // remove node from network
         info!("TEST: Removing Node #{:016X}: ", node.info.id);
@@ -80,14 +78,11 @@ async fn test_fail() -> Result<()> {
                 .iter()
                 .position(|e| e.info.id == neighbor.id)
                 .unwrap();
-            let mut neighbors = get_neighbors(
-                &network.nodes,
-                neighbor_index,
-                network.conf.pastry_conf.leaf_set_k,
-            )
-            .iter()
-            .map(|f| f.info.id)
-            .collect::<Vec<u64>>();
+            let mut neighbors =
+                get_neighbors(&network.nodes, neighbor_index, network.conf.pastry_conf.k)
+                    .iter()
+                    .map(|f| f.info.id)
+                    .collect::<Vec<u64>>();
             neighbors.sort();
 
             assert_eq!(

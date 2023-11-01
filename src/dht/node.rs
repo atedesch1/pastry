@@ -10,7 +10,7 @@ use tonic::transport::{Channel, Server};
 use crate::{
     error::{Error, Result},
     hring::hasher::Sha256Hasher,
-    pastry::{leaf::LeafSet, table::RoutingTable},
+    pastry::{leaf::LeafSet, shared::Config, table::RoutingTable},
     rpc::node::{
         node_service_client::NodeServiceClient,
         node_service_server::{NodeService, NodeServiceServer},
@@ -79,12 +79,6 @@ pub struct Node {
     pub state: Arc<State>,
 }
 
-/// Configuration for the Pastry network
-#[derive(Debug, Clone)]
-pub struct PastryConfig {
-    pub leaf_set_k: usize,
-}
-
 impl Node {
     /// Gets node's id and public address and returns a NodeInfo
     ///
@@ -109,7 +103,7 @@ impl Node {
     ///
     /// A Result containing the newly registered node.
     ///
-    pub fn new(config: PastryConfig, hostname: &str, port: &str) -> Result<Self> {
+    pub fn new(config: Config, hostname: &str, port: &str) -> Result<Self> {
         let pub_addr = format!("http://{}:{}", hostname, port);
         let addr = format!("0.0.0.0:{}", port);
 
@@ -125,7 +119,7 @@ impl Node {
                 name: RwLock::new(NodeState::Unitialized),
                 notify: Notify::new(),
                 data: RwLock::new(StateData {
-                    leaf: LeafSet::new(config.leaf_set_k, id, NodeInfo::new(id, &pub_addr))?,
+                    leaf: LeafSet::new(config.k, id, NodeInfo::new(id, &pub_addr))?,
                     table: RoutingTable::new(id),
                 }),
             }),
@@ -146,7 +140,7 @@ impl Node {
     ///
     /// A Result containing the newly registered node.
     ///
-    pub fn from_id(config: PastryConfig, hostname: &str, port: &str, id: u64) -> Result<Self> {
+    pub fn from_id(config: Config, hostname: &str, port: &str, id: u64) -> Result<Self> {
         let pub_addr = format!("http://{}:{}", hostname, port);
         let addr = format!("0.0.0.0:{}", port);
 
@@ -161,7 +155,7 @@ impl Node {
                 name: RwLock::new(NodeState::Unitialized),
                 notify: Notify::new(),
                 data: RwLock::new(StateData {
-                    leaf: LeafSet::new(config.leaf_set_k, id, NodeInfo::new(id, &pub_addr))?,
+                    leaf: LeafSet::new(config.k, id, NodeInfo::new(id, &pub_addr))?,
                     table: RoutingTable::new(id),
                 }),
             }),

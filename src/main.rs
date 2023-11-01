@@ -2,8 +2,8 @@ extern crate pastry_dht;
 
 use log::info;
 use pastry_dht::{
-    dht::node::PastryConfig,
     error::{Error, Result},
+    pastry::shared::Config,
 };
 use std::env;
 
@@ -29,9 +29,7 @@ async fn main() -> Result<()> {
 
     info!("Initializing node on {}", public_addr);
 
-    let config = PastryConfig { leaf_set_k: k };
-
-    let node = Node::new(config, &hostname, &port)?;
+    let node = Node::new(Config::new(k), &hostname, &port)?;
 
     node.bootstrap_and_serve(bootstrap_addr).await?.await?
 }

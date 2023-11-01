@@ -4,7 +4,7 @@ mod util;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use pastry_dht::{
-    dht::node::PastryConfig, error::Result, hring::hasher::Sha256Hasher, rpc::node::QueryRequest,
+    error::Result, hring::hasher::Sha256Hasher, pastry::shared::Config, rpc::node::QueryRequest,
 };
 use setup::*;
 use tonic::Request;
@@ -47,7 +47,7 @@ fn get_random_key(i: i32) -> Result<u64> {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_query() -> Result<()> {
     let network = Network::new(NetworkConfiguration {
-        pastry_conf: PastryConfig { leaf_set_k: 4 },
+        pastry_conf: Config::new(4),
         num_nodes: 128,
     })
     .init()
