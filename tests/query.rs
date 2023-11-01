@@ -46,10 +46,6 @@ fn get_random_key(i: i32) -> Result<u64> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_query() -> Result<()> {
-    // env_logger::Builder::from_default_env()
-    //     .filter_level(log::LevelFilter::Debug)
-    //     .init();
-
     let network = Network::new(NetworkConfiguration {
         pastry_conf: PastryConfig { leaf_set_k: 4 },
         num_nodes: 128,

@@ -13,10 +13,6 @@ use setup::*;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_fail() -> Result<()> {
-    // env_logger::Builder::from_default_env()
-    //     .filter_level(log::LevelFilter::Debug)
-    //     .init();
-
     let mut network = Network::new(NetworkConfiguration {
         pastry_conf: PastryConfig { leaf_set_k: 2 },
         // num_nodes: 8,

@@ -12,10 +12,6 @@ use tonic::Request;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_join() -> Result<()> {
-    // env_logger::Builder::from_default_env()
-    //     .filter_level(log::LevelFilter::Debug)
-    //     .init();
-
     for k in vec![1, 4, 16] {
         for num_of_nodes in vec![1, 4, 16, 64] {
             let network = Network::new(NetworkConfiguration {

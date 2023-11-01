@@ -81,6 +81,23 @@ impl Network {
         self
     }
 
+    /// Adds logging to the network.
+    ///
+    /// # Arguments
+    ///
+    /// * `filter` - Log filter.
+    ///
+    /// # Returns
+    ///
+    /// The same network with IDs specified.
+    ///
+    pub fn with_logging(self, filter: log::LevelFilter) -> Self {
+        env_logger::Builder::from_default_env()
+            .filter_level(filter)
+            .init();
+        self
+    }
+
     /// Initializes the Pastry Network.
     /// Creates and serves all nodes and updates their state based on network.
     ///
