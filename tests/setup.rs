@@ -1,7 +1,7 @@
 use core::fmt;
 
 use log::warn;
-use pastry::{
+use pastry_dht::{
     dht::node::{Node, NodeInfo, PastryConfig},
     error::Result,
     rpc::node::node_service_client::NodeServiceClient,

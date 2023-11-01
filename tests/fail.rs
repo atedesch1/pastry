@@ -2,7 +2,7 @@ mod setup;
 mod util;
 
 use log::info;
-use pastry::{
+use pastry_dht::{
     dht::node::{Node, NodeInfo, PastryConfig},
     error::Result,
     rpc::node::QueryRequest,

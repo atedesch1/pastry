@@ -3,7 +3,7 @@ mod util;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use pastry::{
+use pastry_dht::{
     dht::node::PastryConfig, error::Result, hring::hasher::Sha256Hasher, rpc::node::QueryRequest,
 };
 use setup::*;

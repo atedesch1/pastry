@@ -1,4 +1,4 @@
-use pastry::{
+use pastry_dht::{
     dht::node::{Node, PastryConfig},
     error::Result,
     util::get_neighbors,

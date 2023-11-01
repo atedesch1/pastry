@@ -1,13 +1,13 @@
-extern crate pastry;
+extern crate pastry_dht;
 
 use log::info;
-use pastry::{
+use pastry_dht::{
     dht::node::PastryConfig,
     error::{Error, Result},
 };
 use std::env;
 
-use pastry::dht::node::Node;
+use pastry_dht::dht::node::Node;
 
 #[tokio::main]
 async fn main() -> Result<()> {
