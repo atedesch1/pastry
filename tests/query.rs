@@ -3,7 +3,9 @@ mod util;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use pastry::{dht::node::PastryConfig, hring::hasher::Sha256Hasher, rpc::node::QueryRequest};
+use pastry::{
+    dht::node::PastryConfig, error::Result, hring::hasher::Sha256Hasher, rpc::node::QueryRequest,
+};
 use setup::*;
 use tonic::Request;
 
@@ -28,8 +30,22 @@ fn find_responsible(nodes: &Vec<NetworkNode>, key: u64) -> usize {
     position
 }
 
+fn get_random_key(i: i32) -> Result<u64> {
+    Ok(Sha256Hasher::hash_once(
+        format!(
+            "{}_{}",
+            i,
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)?
+                .as_nanos()
+                .to_string()
+        )
+        .as_bytes(),
+    ))
+}
+
 #[tokio::test(flavor = "multi_thread")]
-async fn test_query() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_query() -> Result<()> {
     // env_logger::Builder::from_default_env()
     //     .filter_level(log::LevelFilter::Debug)
     //     .init();
@@ -44,17 +60,7 @@ async fn test_query() -> Result<(), Box<dyn std::error::Error>> {
     for i in 0..256 {
         let (_, mut client) = network.get_random_node_connection().await?;
 
-        let key = Sha256Hasher::hash_once(
-            format!(
-                "{}_{}",
-                i,
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)?
-                    .as_nanos()
-                    .to_string()
-            )
-            .as_bytes(),
-        );
+        let key = get_random_key(i)?;
 
         let res = client
             .query(Request::new(QueryRequest {

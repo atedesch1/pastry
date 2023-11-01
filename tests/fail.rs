@@ -2,14 +2,17 @@ mod setup;
 mod util;
 
 use log::info;
-use pastry::dht::node::{Node, NodeInfo, PastryConfig};
-use pastry::rpc::node::QueryRequest;
-use pastry::util::get_neighbors;
+use pastry::{
+    dht::node::{Node, NodeInfo, PastryConfig},
+    error::Result,
+    rpc::node::QueryRequest,
+    util::get_neighbors,
+};
 use rand::Rng;
 use setup::*;
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_fail() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_fail() -> Result<()> {
     // env_logger::Builder::from_default_env()
     //     .filter_level(log::LevelFilter::Debug)
     //     .init();

@@ -1,5 +1,6 @@
 use pastry::{
     dht::node::{Node, PastryConfig},
+    error::Result,
     util::get_neighbors,
 };
 
@@ -10,7 +11,7 @@ use setup::*;
 use tonic::Request;
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_join() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_join() -> Result<()> {
     // env_logger::Builder::from_default_env()
     //     .filter_level(log::LevelFilter::Debug)
     //     .init();
