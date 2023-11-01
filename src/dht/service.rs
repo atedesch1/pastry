@@ -1,4 +1,4 @@
-use log::info;
+use log::{info, warn};
 use tonic::{Request, Response, Status};
 
 use crate::{
@@ -8,7 +8,7 @@ use crate::{
         node_service_client::NodeServiceClient, node_service_server::NodeService,
         AnnounceArrivalRequest, FixLeafSetRequest, GetNodeIdResponse, GetNodeStateResponse,
         GetNodeTableEntryRequest, GetNodeTableEntryResponse, JoinRequest, JoinResponse,
-        LeaveRequest, NodeEntry, QueryRequest, QueryResponse,
+        LeaveRequest, NodeEntry, QueryError, QueryRequest, QueryResponse, QueryType,
     },
     util::{self, U64_HEX_NUM_OF_DIGITS},
 };
@@ -119,18 +119,45 @@ impl NodeService for super::node::Node {
 
         let req = request.get_ref();
 
-        if let Some(res) = self.query_with_leaf_set(req.key).await? {
+        if let Some(node) = self.route_with_leaf_set(req.key).await {
+            if node.id == self.id {
+                // Node is the owner of key
+                return match self.execute_query(req).await {
+                    Ok(value) => Ok(Response::new(QueryResponse {
+                        from_id: self.id,
+                        key: req.key,
+                        value,
+                        error: None,
+                    })),
+                    Err(err) => {
+                        warn!("#{:016X}: Query error: {}", self.id, err);
+
+                        Ok(Response::new(QueryResponse {
+                            from_id: self.id,
+                            key: req.key,
+                            value: None,
+                            error: Some(
+                                match QueryType::from_i32(req.query_type).unwrap() {
+                                    QueryType::Set => QueryError::ValueNotProvided,
+                                    QueryType::Get | QueryType::Delete => QueryError::KeyNotFound,
+                                }
+                                .into(),
+                            ),
+                        }))
+                    }
+                };
+            }
+        }
+
+        if let Some(res) = self.query_with_leaf_set(req).await? {
             return Ok(res);
         }
 
-        if let Some(res) = self
-            .query_with_routing_table(req.key, req.matched_digits as usize + 1)
-            .await?
-        {
+        if let Some(res) = self.query_with_routing_table(req).await? {
             return Ok(res);
         }
 
-        self.query_with_closest_from_leaf_set(req.key).await
+        self.query_with_closest_from_leaf_set(req).await
     }
 
     async fn announce_arrival(
@@ -350,34 +377,24 @@ impl Node {
     // QUERY
     async fn query_with_leaf_set(
         &self,
-        key: u64,
+        request: &QueryRequest,
     ) -> std::result::Result<Option<Response<QueryResponse>>, Status> {
         loop {
-            let node = match self.route_with_leaf_set(key).await {
+            let node = match self.route_with_leaf_set(request.key).await {
                 Some(node) => node,
                 None => return Ok(None),
             };
 
-            if node.id == self.id {
-                // Node is the owner of key
-                return Ok(Some(Response::new(QueryResponse { id: self.id })));
-            }
+            let mut query = request.clone();
+            query.from_id = self.id;
+            query.matched_digits = util::get_num_matched_digits(node.id, request.key)?;
 
             // Forward query to neighbor in leaf set
             let err: Error = match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
-                Ok(mut client) => {
-                    match client
-                        .query(QueryRequest {
-                            from_id: self.id,
-                            key,
-                            matched_digits: util::get_num_matched_digits(node.id, key)?,
-                        })
-                        .await
-                    {
-                        Ok(r) => return Ok(Some(r)),
-                        Err(err) => err.into(),
-                    }
-                }
+                Ok(mut client) => match client.query(query).await {
+                    Ok(r) => return Ok(Some(r)),
+                    Err(err) => err.into(),
+                },
                 Err(err) => err.into(),
             };
 
@@ -387,29 +404,25 @@ impl Node {
 
     async fn query_with_routing_table(
         &self,
-        key: u64,
-        min_matched_digits: usize,
+        request: &QueryRequest,
     ) -> std::result::Result<Option<Response<QueryResponse>>, Status> {
-        let (node, matched_digits) =
-            match self.route_with_routing_table(key, min_matched_digits).await {
-                Some(res) => res,
-                None => return Ok(None),
-            };
+        let (node, matched_digits) = match self
+            .route_with_routing_table(request.key, request.matched_digits as usize + 1)
+            .await
+        {
+            Some(res) => res,
+            None => return Ok(None),
+        };
+
+        let mut query = request.clone();
+        query.from_id = self.id;
+        query.matched_digits = matched_digits as u32;
 
         let err: Error = match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
-            Ok(mut client) => {
-                match client
-                    .query(Request::new(QueryRequest {
-                        from_id: self.id,
-                        matched_digits: matched_digits as u32,
-                        key,
-                    }))
-                    .await
-                {
-                    Ok(r) => return Ok(Some(r)),
-                    Err(err) => err.into(),
-                }
-            }
+            Ok(mut client) => match client.query(query).await {
+                Ok(r) => return Ok(Some(r)),
+                Err(err) => err.into(),
+            },
             Err(err) => err.into(),
         };
 
@@ -420,25 +433,20 @@ impl Node {
 
     async fn query_with_closest_from_leaf_set(
         &self,
-        key: u64,
+        request: &QueryRequest,
     ) -> std::result::Result<Response<QueryResponse>, Status> {
         loop {
-            let (node, matched_digits) = self.get_closest_from_leaf_set(key).await;
+            let (node, matched_digits) = self.get_closest_from_leaf_set(request.key).await;
+
+            let mut query = request.clone();
+            query.from_id = self.id;
+            query.matched_digits = matched_digits as u32;
 
             let err: Error = match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
-                Ok(mut client) => {
-                    match client
-                        .query(QueryRequest {
-                            from_id: self.id,
-                            key,
-                            matched_digits: matched_digits as u32,
-                        })
-                        .await
-                    {
-                        Ok(r) => return Ok(r),
-                        Err(err) => err.into(),
-                    }
-                }
+                Ok(mut client) => match client.query(query).await {
+                    Ok(r) => return Ok(r),
+                    Err(err) => err.into(),
+                },
                 Err(err) => err.into(),
             };
 

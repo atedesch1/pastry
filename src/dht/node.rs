@@ -12,13 +12,14 @@ use crate::{
     hring::hasher::Sha256Hasher,
     pastry::{leaf::LeafSet, shared::Config, table::RoutingTable},
     rpc::node::{
-        node_service_client::NodeServiceClient,
-        node_service_server::{NodeService, NodeServiceServer},
+        node_service_client::NodeServiceClient, node_service_server::NodeServiceServer,
         AnnounceArrivalRequest, FixLeafSetRequest, GetNodeTableEntryRequest, JoinRequest,
-        NodeEntry,
+        NodeEntry, QueryRequest, QueryType,
     },
     util::{self, U64_HEX_NUM_OF_DIGITS},
 };
+
+use super::store::Store;
 
 #[derive(Debug, Clone)]
 pub struct NodeInfo {
@@ -62,6 +63,7 @@ pub struct State {
     pub name: RwLock<NodeState>,
     pub notify: Notify,
     pub data: RwLock<StateData>,
+    pub store: RwLock<Store>,
 }
 
 #[derive(Debug)]
@@ -122,6 +124,7 @@ impl Node {
                     leaf: LeafSet::new(config.k, id, NodeInfo::new(id, &pub_addr))?,
                     table: RoutingTable::new(id),
                 }),
+                store: RwLock::new(Store::new()),
             }),
         })
     }
@@ -158,6 +161,7 @@ impl Node {
                     leaf: LeafSet::new(config.k, id, NodeInfo::new(id, &pub_addr))?,
                     table: RoutingTable::new(id),
                 }),
+                store: RwLock::new(Store::new()),
             }),
         })
     }
@@ -276,6 +280,33 @@ impl Node {
         self.announce_arrival(&mut state_data).await?;
 
         Ok(())
+    }
+
+    /// Executes query request.
+    pub async fn execute_query(&self, query: &QueryRequest) -> Result<Option<Vec<u8>>> {
+        let key = &query.key;
+        let value = &query.value;
+        let query_type = query.query_type;
+
+        info!(
+            "#{:016X}: Executing query for key {:016X}",
+            self.id, query.key
+        );
+
+        match QueryType::from_i32(query_type).unwrap() {
+            QueryType::Set => match value {
+                None => Err(Error::Value("Value not provided".into())),
+                Some(value) => Ok(self.state.store.write().await.set(key, value)),
+            },
+            QueryType::Get => match self.state.store.read().await.get(key) {
+                None => Err(Error::Value("Key not present in database".into())),
+                Some(value) => Ok(Some(value.clone())),
+            },
+            QueryType::Delete => match self.state.store.write().await.delete(key) {
+                None => Err(Error::Value("Key not present in database.".into())),
+                Some(value) => Ok(Some(value)),
+            },
+        }
     }
 
     pub async fn route_with_leaf_set(&self, key: u64) -> Option<NodeInfo> {

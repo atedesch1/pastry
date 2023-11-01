@@ -4,7 +4,10 @@ mod util;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use pastry_dht::{
-    error::Result, hring::hasher::Sha256Hasher, pastry::shared::Config, rpc::node::QueryRequest,
+    error::Result,
+    hring::hasher::Sha256Hasher,
+    pastry::shared::Config,
+    rpc::node::{QueryRequest, QueryType},
 };
 use setup::*;
 use tonic::Request;
@@ -62,14 +65,16 @@ async fn test_query() -> Result<()> {
             .query(Request::new(QueryRequest {
                 from_id: 0,
                 matched_digits: 0,
+                query_type: QueryType::Get.into(),
                 key,
+                value: None,
             }))
             .await?
             .into_inner();
 
         let idx = find_responsible(&network.nodes, key);
 
-        assert_eq!(res.id, network.nodes[idx].info.id);
+        assert_eq!(res.from_id, network.nodes[idx].info.id);
     }
 
     network.shutdown();

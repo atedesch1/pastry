@@ -7,6 +7,17 @@ message NodeEntry {
   string pub_addr = 2;
 }
 
+enum QueryType {
+    Get = 0;
+    Delete = 1;
+    Set = 2;
+}
+
+enum QueryError {
+    ValueNotProvided = 0;
+    KeyNotFound = 1;
+}
+
 // DEBUG
 
 message GetNodeIdResponse {
@@ -51,11 +62,17 @@ message QueryRequest {
   uint64 from_id = 1;
   uint32 matched_digits = 2;
 
-  uint64 key = 3;
+  QueryType query_type = 3;
+  uint64 key = 4;
+  optional bytes value = 5;
 }
 
 message QueryResponse {
-  uint64 id = 1;
+  uint64 from_id = 1;
+
+  uint64 key = 2;
+  optional bytes value = 3;
+  optional QueryError error = 4;
 }
 
 // UPDATE NEIGHBORS

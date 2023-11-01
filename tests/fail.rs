@@ -6,7 +6,7 @@ use pastry_dht::{
     dht::node::{Node, NodeInfo},
     error::Result,
     pastry::shared::Config,
-    rpc::node::QueryRequest,
+    rpc::node::{QueryRequest, QueryType},
     util::get_neighbors,
 };
 use rand::Rng;
@@ -60,7 +60,9 @@ async fn test_fail() -> Result<()> {
                 .query(QueryRequest {
                     from_id: 0,
                     matched_digits: 0,
+                    query_type: QueryType::Get.into(),
                     key: node_info.id,
+                    value: None,
                 })
                 .await?;
 
