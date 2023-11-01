@@ -1,8 +1,10 @@
 [package]
 name = "pastry"
 description = "A Pastry DHT protocol implementation in Rust."
+authors = ["Alvaro Tedeschi"]
 version = "0.1.0"
 edition = "2021"
+license = "LICENSE"
 
 [dependencies]
 log = "*"
