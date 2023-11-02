@@ -8,14 +8,19 @@ message NodeEntry {
 }
 
 enum QueryType {
-    Get = 0;
-    Delete = 1;
-    Set = 2;
+  Get = 0;
+  Delete = 1;
+  Set = 2;
 }
 
 enum QueryError {
-    ValueNotProvided = 0;
-    KeyNotFound = 1;
+  ValueNotProvided = 0;
+  KeyNotFound = 1;
+}
+
+message KeyValueEntry {
+  uint64 key = 1;
+  bytes value = 2;
 }
 
 // DEBUG
@@ -73,6 +78,10 @@ message QueryResponse {
   uint64 key = 2;
   optional bytes value = 3;
   optional QueryError error = 4;
+}
+
+message TransferKeysRequest {
+  uint64 id = 1;
 }
 
 // UPDATE NEIGHBORS

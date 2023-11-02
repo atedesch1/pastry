@@ -12,10 +12,21 @@ use rand::Rng;
 use tokio::task::JoinHandle;
 use tonic::transport::Channel;
 
+const INITIAL_PORT: i32 = 30000;
+
 #[derive(Clone)]
 pub struct NetworkConfiguration {
     pub num_nodes: u32,
     pub pastry_conf: Config,
+}
+
+impl NetworkConfiguration {
+    pub fn new(num_nodes: u32, pastry_conf: Config) -> Self {
+        NetworkConfiguration {
+            num_nodes,
+            pastry_conf,
+        }
+    }
 }
 
 impl fmt::Display for NetworkConfiguration {
@@ -38,6 +49,8 @@ pub struct Network {
     pub conf: NetworkConfiguration,
     pub nodes: Vec<NetworkNode>,
     pub ids: Vec<u64>,
+    pub num_deployed: u32,
+    pub available_port: i32,
 }
 
 impl Network {
@@ -56,6 +69,8 @@ impl Network {
             conf,
             nodes: Vec::new(),
             ids: Vec::new(),
+            num_deployed: 0,
+            available_port: INITIAL_PORT,
         }
     }
 
@@ -74,10 +89,6 @@ impl Network {
     /// Panics if number of nodes is different then number of IDs.
     ///
     pub fn with_ids(mut self, ids: Vec<u64>) -> Self {
-        if ids.len() != self.conf.num_nodes as usize {
-            panic!("number of ids must match number of nodes");
-        }
-
         self.ids = ids;
         self
     }
@@ -115,32 +126,34 @@ impl Network {
     /// This will make each node request to join the network.
     ///
     pub async fn init_by_join(mut self) -> Result<Self> {
-        let mut num_deployed = 0;
-        let mut port = 30000;
-        while num_deployed < self.conf.num_nodes {
+        while self.num_deployed < self.conf.num_nodes {
             let (info, handle) = loop {
-                let node = if let Some(&id) = self.ids.get(num_deployed as usize) {
+                let node = if let Some(&id) = self.ids.get(self.num_deployed as usize) {
                     Node::from_id(
                         self.conf.pastry_conf.clone(),
                         "0.0.0.0",
-                        &port.to_string(),
+                        &self.available_port.to_string(),
                         id,
                     )?
                 } else {
-                    Node::new(self.conf.pastry_conf.clone(), "0.0.0.0", &port.to_string())?
+                    Node::new(
+                        self.conf.pastry_conf.clone(),
+                        "0.0.0.0",
+                        &self.available_port.to_string(),
+                    )?
                 };
 
                 match self.setup_node(node).await {
                     Ok(n) => break n,
                     Err(e) => warn!("error setting up node: {}", e),
                 }
-                port += 1;
+                self.available_port += 1;
             };
 
             self.nodes.push(NetworkNode { info, handle });
 
-            num_deployed += 1;
-            port += 1;
+            self.num_deployed += 1;
+            self.available_port += 1;
         }
 
         self.nodes.sort_by_key(|f| f.info.id);
@@ -156,28 +169,29 @@ impl Network {
     /// This will only update each node's state
     ///
     pub async fn init_by_state(mut self) -> Result<Self> {
-        let mut num_deployed = 0;
-        let mut port = 30000;
-
         let mut nodes: Vec<Node> = Vec::new();
-        while num_deployed < self.conf.num_nodes {
+        while self.num_deployed < self.conf.num_nodes {
             let (node, handle) = loop {
-                let node = if let Some(&id) = self.ids.get(num_deployed as usize) {
+                let node = if let Some(&id) = self.ids.get(self.num_deployed as usize) {
                     Node::from_id(
                         self.conf.pastry_conf.clone(),
                         "0.0.0.0",
-                        &port.to_string(),
+                        &self.available_port.to_string(),
                         id,
                     )?
                 } else {
-                    Node::new(self.conf.pastry_conf.clone(), "0.0.0.0", &port.to_string())?
+                    Node::new(
+                        self.conf.pastry_conf.clone(),
+                        "0.0.0.0",
+                        &self.available_port.to_string(),
+                    )?
                 };
 
                 match node.serve().await {
                     Ok(handle) => break (node, handle),
                     Err(e) => warn!("error setting up node: {}", e),
                 };
-                port += 1;
+                self.available_port += 1;
             };
 
             let info = NodeInfo {
@@ -188,8 +202,8 @@ impl Network {
             self.nodes.push(NetworkNode { info, handle });
             nodes.push(node);
 
-            num_deployed += 1;
-            port += 1;
+            self.num_deployed += 1;
+            self.available_port += 1;
         }
 
         self.nodes.sort_by_key(|f| f.info.id);
@@ -215,6 +229,50 @@ impl Network {
         println!("Created network: {}", self);
 
         Ok(self)
+    }
+
+    pub async fn add_node(&mut self) -> Result<NodeInfo> {
+        let (info, handle) = loop {
+            let node = if let Some(&id) = self.ids.get(self.num_deployed as usize) {
+                Node::from_id(
+                    self.conf.pastry_conf.clone(),
+                    "0.0.0.0",
+                    &self.available_port.to_string(),
+                    id,
+                )?
+            } else {
+                Node::new(
+                    self.conf.pastry_conf.clone(),
+                    "0.0.0.0",
+                    &self.available_port.to_string(),
+                )?
+            };
+
+            match self.setup_node(node).await {
+                Ok(n) => break n,
+                Err(e) => {
+                    warn!("error setting up node: {}", e);
+                    self.available_port += 1;
+                }
+            }
+        };
+
+        self.nodes.push(NetworkNode {
+            info: info.clone(),
+            handle,
+        });
+
+        self.conf.num_nodes += 1;
+        self.num_deployed += 1;
+
+        self.nodes.sort_by_key(|f| f.info.id);
+
+        println!(
+            "Added node #{:016X} with address {}",
+            info.id, info.pub_addr
+        );
+
+        Ok(info)
     }
 
     async fn setup_node(&self, node: Node) -> Result<(NodeInfo, JoinHandle<Result<()>>)> {

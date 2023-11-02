@@ -1,4 +1,10 @@
-use pastry_dht::{dht::node::Node, error::Result, pastry::shared::Config, util::get_neighbors};
+use pastry_dht::{
+    dht::node::Node,
+    error::Result,
+    pastry::shared::Config,
+    rpc::node::{QueryRequest, QueryType},
+    util::get_neighbors,
+};
 
 mod setup;
 mod util;
@@ -45,6 +51,95 @@ async fn test_join() -> Result<()> {
             network.shutdown();
         }
     }
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_transfer_keys() -> Result<()> {
+    let mut network = Network::new(NetworkConfiguration {
+        pastry_conf: Config::new(4),
+        num_nodes: 0,
+    })
+    .with_ids(vec![u64::MAX - 10, 0, 10])
+    .with_logging(log::LevelFilter::Debug)
+    .init()
+    .await?;
+
+    network.add_node().await?;
+
+    let (_, mut client) = network.get_random_node_connection().await?;
+    client
+        .query(QueryRequest {
+            from_id: 0,
+            matched_digits: 0,
+            query_type: QueryType::Set.into(),
+            key: u64::MAX - 5,
+            value: Some("first".as_bytes().to_vec()),
+        })
+        .await?;
+    client
+        .query(QueryRequest {
+            from_id: 0,
+            matched_digits: 0,
+            query_type: QueryType::Set.into(),
+            key: 5,
+            value: Some("second".as_bytes().to_vec()),
+        })
+        .await?;
+    client
+        .query(QueryRequest {
+            from_id: 0,
+            matched_digits: 0,
+            query_type: QueryType::Set.into(),
+            key: 15,
+            value: Some("third".as_bytes().to_vec()),
+        })
+        .await?;
+
+    network.add_node().await?;
+    network.add_node().await?;
+
+    let res = client
+        .query(QueryRequest {
+            from_id: 0,
+            matched_digits: 0,
+            query_type: QueryType::Get.into(),
+            key: u64::MAX - 5,
+            value: None,
+        })
+        .await?
+        .into_inner();
+    assert_eq!(res.from_id, u64::MAX - 10);
+    assert_eq!(String::from_utf8(res.value.unwrap())?, "first".to_owned());
+
+    let res = client
+        .query(QueryRequest {
+            from_id: 0,
+            matched_digits: 0,
+            query_type: QueryType::Get.into(),
+            key: 5,
+            value: None,
+        })
+        .await?
+        .into_inner();
+    assert_eq!(res.from_id, 0);
+    assert_eq!(String::from_utf8(res.value.unwrap())?, "second".to_owned());
+
+    let res = client
+        .query(QueryRequest {
+            from_id: 0,
+            matched_digits: 0,
+            query_type: QueryType::Get.into(),
+            key: 15,
+            value: None,
+        })
+        .await?
+        .into_inner();
+    assert_eq!(res.from_id, 10);
+    assert_eq!(String::from_utf8(res.value.unwrap())?, "third".to_owned());
+
+    network.shutdown();
 
     Ok(())
 }

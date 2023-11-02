@@ -15,6 +15,7 @@ service NodeService {
   rpc Join(JoinRequest) returns (JoinResponse);
   rpc Leave(LeaveRequest) returns (google.protobuf.Empty);
   rpc Query(QueryRequest) returns (QueryResponse);
+  rpc TransferKeys(TransferKeysRequest) returns (stream KeyValueEntry);
 
   // UPDATE NEIGHBORS
   rpc AnnounceArrival(AnnounceArrivalRequest) returns (google.protobuf.Empty);

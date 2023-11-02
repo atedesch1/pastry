@@ -1,14 +1,18 @@
 use log::{info, warn};
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
 use tonic::{Request, Response, Status};
 
 use crate::{
     dht::node::{Node, NodeState},
     error::Error,
+    hring::ring::{Ring, Ring64},
     rpc::node::{
         node_service_client::NodeServiceClient, node_service_server::NodeService,
         AnnounceArrivalRequest, FixLeafSetRequest, GetNodeIdResponse, GetNodeStateResponse,
         GetNodeTableEntryRequest, GetNodeTableEntryResponse, JoinRequest, JoinResponse,
-        LeaveRequest, NodeEntry, QueryError, QueryRequest, QueryResponse, QueryType,
+        KeyValueEntry, LeaveRequest, NodeEntry, QueryError, QueryRequest, QueryResponse, QueryType,
+        TransferKeysRequest,
     },
     util::{self, U64_HEX_NUM_OF_DIGITS},
 };
@@ -191,6 +195,52 @@ impl NodeService for super::node::Node {
         }
 
         self.query_with_closest_from_leaf_set(req).await
+    }
+
+    type TransferKeysStream = UnboundedReceiverStream<std::result::Result<KeyValueEntry, Status>>;
+
+    async fn transfer_keys(
+        &self,
+        request: Request<TransferKeysRequest>,
+    ) -> std::result::Result<Response<Self::TransferKeysStream>, Status> {
+        let prev_id = self.id;
+        let node_id = request.get_ref().id;
+
+        let (tx, rx) = mpsc::unbounded_channel();
+
+        let state = self.state.clone();
+
+        tokio::spawn(async move {
+            let mut store = state.store.write().await;
+            let entries = store
+                .get_entries(|key| !Ring64::is_in_range(prev_id, node_id, key))
+                .await
+                .iter()
+                .map(|e| (e.0.clone(), e.1.clone()))
+                .collect::<Vec<(u64, Vec<u8>)>>();
+
+            info!("#{:016X}: Transferring keys to #{:016X}", prev_id, node_id);
+
+            for (key, value) in &entries {
+                // TODO: implement retry logic
+                match tx.send(Ok(KeyValueEntry {
+                    key: key.clone(),
+                    value: value.clone(),
+                })) {
+                    Ok(_) => {
+                        store.delete(key);
+                    }
+                    Err(err) => {
+                        warn!(
+                            "#{:016X}: Could not transfer key {:016X} to #{:016X}: {}",
+                            prev_id, key, node_id, err
+                        );
+                    }
+                };
+            }
+        });
+
+        Ok(Response::new(UnboundedReceiverStream::new(rx)))
     }
 
     async fn announce_arrival(

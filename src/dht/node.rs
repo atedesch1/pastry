@@ -14,7 +14,7 @@ use crate::{
     rpc::node::{
         node_service_client::NodeServiceClient, node_service_server::NodeServiceServer,
         AnnounceArrivalRequest, FixLeafSetRequest, GetNodeTableEntryRequest, JoinRequest,
-        NodeEntry, QueryRequest, QueryType,
+        NodeEntry, QueryRequest, QueryType, TransferKeysRequest,
     },
     util::{self, U64_HEX_NUM_OF_DIGITS},
 };
@@ -258,7 +258,7 @@ impl Node {
     async fn connect_to_network(&self, bootstrap_addr: &str) -> Result<()> {
         info!("#{:016X}: Connecting to network", self.id);
 
-        let mut state_data = self.state.data.write().await;
+        let mut data = self.state.data.write().await;
 
         let mut client = Node::connect_with_retry(bootstrap_addr).await?;
         let join_response = client
@@ -271,13 +271,26 @@ impl Node {
             .await?
             .into_inner();
 
-        self.update_routing_table(&mut state_data, &join_response.routing_table)
+        {
+            let mut client = Node::connect_with_retry(&join_response.pub_addr).await?;
+            let mut stream = client
+                .transfer_keys(TransferKeysRequest { id: self.id })
+                .await?
+                .into_inner();
+            let mut store = self.state.store.write().await;
+
+            while let Some(entry) = stream.message().await? {
+                store.set(&entry.key, &entry.value);
+            }
+        }
+
+        self.update_routing_table(&mut data, &join_response.routing_table)
             .await?;
 
-        self.update_leaf_set(&mut state_data, &join_response.leaf_set)
+        self.update_leaf_set(&mut data, &join_response.leaf_set)
             .await?;
 
-        self.announce_arrival(&mut state_data).await?;
+        self.announce_arrival(&mut data).await?;
 
         Ok(())
     }
