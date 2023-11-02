@@ -77,6 +77,39 @@ impl NodeService for super::node::Node {
             routing_table.push(self.get_info().to_node_entry());
         }
 
+        if let Some(node) = self.route_with_leaf_set(req.id).await {
+            if node.id == self.id {
+                // Current node is closest previous to joining node
+                let data = self.state.data.read().await;
+                let leaf_set = {
+                    let mut leaf = data.leaf.clone();
+
+                    // Remove left most neighbor if leaf set is full
+                    if leaf.is_full() {
+                        leaf.remove(
+                            data.leaf
+                                .get_furthest_counter_clockwise_neighbor()
+                                .unwrap()
+                                .id,
+                        )?;
+                    }
+
+                    leaf.get_set()
+                        .iter()
+                        .map(|&e| e.clone().to_node_entry())
+                        .collect()
+                };
+                let routing_table = routing_table.to_owned();
+
+                return Ok(Response::new(JoinResponse {
+                    id: self.id,
+                    pub_addr: self.pub_addr.to_string(),
+                    leaf_set,
+                    routing_table,
+                }));
+            }
+        }
+
         if let Some(res) = self
             .join_with_leaf_set(req.id, &req.pub_addr, &routing_table)
             .await?
@@ -253,36 +286,6 @@ impl Node {
                 Some(node) => node,
                 None => return Ok(None),
             };
-
-            if node.id == self.id {
-                // Current node is closest previous to joining node
-                let data = self.state.data.read().await;
-                let leaf_set = {
-                    let mut leaf = data.leaf.clone();
-
-                    // Remove left most neighbor if leaf set is full
-                    if leaf.is_full() {
-                        leaf.remove(
-                            data.leaf
-                                .get_furthest_counter_clockwise_neighbor()
-                                .unwrap()
-                                .id,
-                        )?;
-                    }
-
-                    leaf.get_set()
-                        .iter()
-                        .map(|&e| e.clone().to_node_entry())
-                        .collect()
-                };
-
-                return Ok(Some(Response::new(JoinResponse {
-                    id: self.id,
-                    pub_addr: self.pub_addr.to_string(),
-                    leaf_set,
-                    routing_table: routing_table.to_owned(),
-                })));
-            }
 
             // Forward to neighbor in leaf set
             let err: Error = match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
