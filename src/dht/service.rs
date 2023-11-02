@@ -71,14 +71,17 @@ impl NodeService for super::node::Node {
                     Some(row) => {
                         for entry in row {
                             if let Some(entry) = entry {
-                                routing_table.push(entry.clone().to_node_entry());
+                                if let Err(position) =
+                                    routing_table.binary_search_by(|e| e.id.cmp(&entry.id))
+                                {
+                                    routing_table.insert(position, entry.clone().to_node_entry());
+                                };
                             }
                         }
                     }
                     None => break,
                 }
             }
-            routing_table.push(self.get_info().to_node_entry());
         }
 
         if let Some(node) = self.route_with_leaf_set(req.id).await {
