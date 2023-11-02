@@ -13,15 +13,15 @@ use super::shared::KeyValuePair;
 /// to store node structures in order to route requests to the apropriate node.
 #[derive(Debug, Clone)]
 pub struct RoutingTable<T> {
-    id: u64,
+    node: KeyValuePair<u64, T>,
     table: Vec<Vec<Option<KeyValuePair<u64, T>>>>,
 }
 
 impl<T: Clone> RoutingTable<T> {
     /// Creates a new instance of the RoutingTable struct.
-    pub fn new(id: u64) -> Self {
+    pub fn new(key: u64, value: T) -> Self {
         Self {
-            id,
+            node: KeyValuePair::new(key, value),
             table: Vec::new(),
         }
     }
@@ -31,13 +31,17 @@ impl<T: Clone> RoutingTable<T> {
         let new_pair = KeyValuePair::new(key, value);
 
         for i in 0..U64_HEX_NUM_OF_DIGITS as usize {
-            let table_digit = get_nth_digit_in_u64_hex(self.id, i)?;
+            let table_digit = get_nth_digit_in_u64_hex(self.node.key, i)?;
             let key_digit = get_nth_digit_in_u64_hex(key, i)?;
 
             if table_digit != key_digit {
                 while self.table.len() < i + 1 {
                     // Push new rows to allow for new entry
                     self.table.push(vec![None; HEX_BASE as usize]);
+                    let last_index = self.table.len() - 1;
+                    self.table[last_index]
+                        [get_nth_digit_in_u64_hex(self.node.key, last_index)? as usize] =
+                        Some(self.node.clone());
                 }
 
                 self.table[i][key_digit as usize] = Some(new_pair);
@@ -51,7 +55,7 @@ impl<T: Clone> RoutingTable<T> {
     /// Removes a value from the table if it exists.
     pub fn remove(&mut self, key: u64) -> Result<()> {
         for i in 0..U64_HEX_NUM_OF_DIGITS as usize {
-            let table_digit = get_nth_digit_in_u64_hex(self.id, i)?;
+            let table_digit = get_nth_digit_in_u64_hex(self.node.key, i)?;
             let key_digit = get_nth_digit_in_u64_hex(key, i)?;
 
             if i >= self.table.len() {
@@ -74,7 +78,7 @@ impl<T: Clone> RoutingTable<T> {
             return Ok(None);
         }
 
-        let matched_digits = util::get_num_matched_digits(self.id, key)? as usize;
+        let matched_digits = util::get_num_matched_digits(self.node.key, key)? as usize;
         let row_index = matched_digits.min(self.table.len() - 1);
 
         if min_matched_digits > row_index {
@@ -84,24 +88,24 @@ impl<T: Clone> RoutingTable<T> {
         let row = &self.table[row_index];
         let key_digit = util::get_nth_digit_in_u64_hex(key, row_index)?;
 
-        let mut closest: &Option<KeyValuePair<u64, T>> = &None;
+        let mut closest: Option<&KeyValuePair<u64, T>> = None;
 
         if row[key_digit as usize].is_some() {
-            closest = &row[key_digit as usize];
+            closest = row[key_digit as usize].as_ref();
         } else {
             for entry in row {
                 if let Some(e) = entry {
                     if closest.is_none()
-                        || (Ring64::distance(e.key, self.id)
-                            < Ring64::distance(closest.as_ref().unwrap().key, self.id))
+                        || (Ring64::distance(key, e.key)
+                            < Ring64::distance(key, closest.unwrap().key))
                     {
-                        closest = entry;
+                        closest = entry.as_ref();
                     }
                 }
             }
         }
 
-        Ok(closest.as_ref().map(|kv| (&kv.value, row_index)))
+        Ok(closest.map(|kv| (&kv.value, row_index)))
     }
 
     /// Returns an Option containing a row of the routing table if it exists.
@@ -135,7 +139,7 @@ impl<T> fmt::Display for RoutingTable<T> {
             if i > 0 {
                 matched = format!(
                     "{:0width$X}",
-                    util::get_first_digits_in_u64_hex(self.id, i).unwrap(),
+                    util::get_first_digits_in_u64_hex(self.node.key, i).unwrap(),
                     width = i
                 ) + &matched;
             }
@@ -160,7 +164,7 @@ mod tests {
     fn setup() -> RoutingTable<u64> {
         let id: u64 = 0xFEDCBA9876543210;
 
-        RoutingTable::new(id)
+        RoutingTable::new(id, id)
     }
 
     #[test]

@@ -112,6 +112,8 @@ impl Node {
         let id = Sha256Hasher::hash_once(pub_addr.as_bytes());
         info!("#{:016X}: Registered node", id);
 
+        let info = NodeInfo::new(id, &pub_addr);
+
         Ok(Node {
             id,
             addr,
@@ -121,8 +123,8 @@ impl Node {
                 name: RwLock::new(NodeState::Unitialized),
                 notify: Notify::new(),
                 data: RwLock::new(StateData {
-                    leaf: LeafSet::new(config.k, id, NodeInfo::new(id, &pub_addr))?,
-                    table: RoutingTable::new(id),
+                    leaf: LeafSet::new(config.k, id, info.clone())?,
+                    table: RoutingTable::new(id, info),
                 }),
                 store: RwLock::new(Store::new()),
             }),
@@ -149,6 +151,8 @@ impl Node {
 
         info!("#{:016X}: Registered node", id);
 
+        let info = NodeInfo::new(id, &pub_addr);
+
         Ok(Node {
             id,
             addr,
@@ -158,8 +162,8 @@ impl Node {
                 name: RwLock::new(NodeState::Unitialized),
                 notify: Notify::new(),
                 data: RwLock::new(StateData {
-                    leaf: LeafSet::new(config.k, id, NodeInfo::new(id, &pub_addr))?,
-                    table: RoutingTable::new(id),
+                    leaf: LeafSet::new(config.k, id, info.clone())?,
+                    table: RoutingTable::new(id, info),
                 }),
                 store: RwLock::new(Store::new()),
             }),
@@ -405,16 +409,22 @@ impl Node {
         };
 
         for entry in state_data.leaf.get_entries() {
-            if entry.id != self.id {
-                let mut client = Node::connect_with_retry(&entry.pub_addr).await?;
-                client
-                    .announce_arrival(announce_arrival_request.clone())
-                    .await?;
+            if entry.id == self.id {
+                continue;
             }
+
+            let mut client = Node::connect_with_retry(&entry.pub_addr).await?;
+            client
+                .announce_arrival(announce_arrival_request.clone())
+                .await?;
         }
 
         for entry in state_data.table.get_entries() {
             if let Some(entry) = entry {
+                if entry.id == self.id {
+                    continue;
+                }
+
                 let mut client = Node::connect_with_retry(&entry.pub_addr).await?;
                 client
                     .announce_arrival(announce_arrival_request.clone())
