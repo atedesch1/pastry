@@ -1,13 +1,13 @@
 use core::fmt;
 
-use log::warn;
-use pastry_dht::{
+use crate::{
     dht::node::{Node, NodeInfo},
     error::Result,
     pastry::shared::Config,
     rpc::node::node_service_client::NodeServiceClient,
     util::get_neighbors,
 };
+use log::warn;
 use rand::Rng;
 use tokio::task::JoinHandle;
 use tonic::transport::Channel;

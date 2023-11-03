@@ -1,15 +1,12 @@
-mod setup;
-mod util;
-
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use pastry_dht::{
+use super::setup::*;
+use crate::{
     error::Result,
     hring::hasher::Sha256Hasher,
     pastry::shared::Config,
     rpc::node::{QueryRequest, QueryType},
 };
-use setup::*;
 use tonic::Request;
 
 fn find_responsible(nodes: &Vec<NetworkNode>, key: u64) -> usize {

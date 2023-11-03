@@ -1,16 +1,14 @@
-use pastry_dht::{
+use crate::{
     dht::node::Node,
     error::Result,
     pastry::shared::Config,
     rpc::node::{QueryRequest, QueryType},
     util::get_neighbors,
 };
-
-mod setup;
-mod util;
-
-use setup::*;
 use tonic::Request;
+
+use super::setup::*;
+use super::util::*;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_join() -> Result<()> {
@@ -43,8 +41,8 @@ async fn test_join() -> Result<()> {
                     leaf_set.clone(),
                     neighbors.clone(),
                     "\nExpected left == right\n left: {}\n right: {}\n",
-                    util::format(leaf_set),
-                    util::format(neighbors)
+                    format_ids(leaf_set),
+                    format_ids(neighbors)
                 );
             }
 
@@ -62,7 +60,6 @@ async fn test_transfer_keys() -> Result<()> {
         num_nodes: 0,
     })
     .with_ids(vec![u64::MAX - 10, 0, 10])
-    .with_logging(log::LevelFilter::Debug)
     .init()
     .await?;
 

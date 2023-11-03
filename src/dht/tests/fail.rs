@@ -1,16 +1,14 @@
-mod setup;
-mod util;
-
-use log::info;
-use pastry_dht::{
+use super::setup::*;
+use super::util::*;
+use crate::{
     dht::node::{Node, NodeInfo},
     error::Result,
     pastry::shared::Config,
     rpc::node::{QueryRequest, QueryType},
     util::get_neighbors,
 };
+use log::info;
 use rand::Rng;
-use setup::*;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_fail() -> Result<()> {
@@ -20,6 +18,7 @@ async fn test_fail() -> Result<()> {
         num_nodes: 100,
     })
     // .with_ids(vec![0, 1, 2, 3, 4, 5, 6, 7])
+    .with_logging(log::LevelFilter::Debug)
     .init()
     .await?;
 
@@ -53,7 +52,7 @@ async fn test_fail() -> Result<()> {
             //     .iter()
             //     .map(|f| f.id)
             //     .collect::<Vec<u64>>();
-            // info!("NODE leaf set: {}", util::format(leaf_set));
+            // info!("NODE leaf set: {}", format_ids(leaf_set));
 
             // query neighbor for node
             client
@@ -91,8 +90,8 @@ async fn test_fail() -> Result<()> {
                 leaf_set.clone(),
                 neighbors.clone(),
                 "\nExpected left == right\n left: {}\n right: {}\n",
-                util::format(leaf_set),
-                util::format(neighbors)
+                format_ids(leaf_set),
+                format_ids(neighbors)
             );
         }
     }

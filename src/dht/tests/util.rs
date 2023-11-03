@@ -1,4 +1,4 @@
-pub fn format(vec: Vec<u64>) -> String {
+pub fn format_ids(vec: Vec<u64>) -> String {
     let str = vec
         .iter()
         .map(|&x| format!("{:x}", x))
