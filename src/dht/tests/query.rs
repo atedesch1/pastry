@@ -45,6 +45,7 @@ fn get_random_key(i: i32) -> Result<u64> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[serial_test::serial]
 async fn test_query() -> Result<()> {
     let network = Network::new(NetworkConfiguration {
         pastry_conf: Config::new(4),

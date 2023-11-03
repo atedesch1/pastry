@@ -11,6 +11,7 @@ use super::setup::*;
 use super::util::*;
 
 #[tokio::test(flavor = "multi_thread")]
+#[serial_test::serial]
 async fn test_join() -> Result<()> {
     for k in vec![1, 4, 16] {
         for num_of_nodes in vec![1, 4, 16, 64] {
@@ -54,6 +55,7 @@ async fn test_join() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+#[serial_test::serial]
 async fn test_transfer_keys() -> Result<()> {
     let mut network = Network::new(NetworkConfiguration {
         pastry_conf: Config::new(4),

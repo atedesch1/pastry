@@ -11,6 +11,7 @@ use log::info;
 use rand::Rng;
 
 #[tokio::test(flavor = "multi_thread")]
+#[serial_test::serial]
 async fn test_fail() -> Result<()> {
     let mut network = Network::new(NetworkConfiguration {
         pastry_conf: Config::new(2),
