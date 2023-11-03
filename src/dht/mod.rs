@@ -1,7 +1,7 @@
-pub mod node;
-pub mod service;
-pub mod store;
-pub mod tests;
+mod node;
+mod service;
+mod store;
+mod tests;
 
 use self::node::Node;
 use crate::{

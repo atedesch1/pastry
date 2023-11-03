@@ -7,7 +7,7 @@ use pastry_dht::{
 };
 use std::env;
 
-use pastry_dht::dht::node::Node;
+use pastry_dht::dht::PastryNode;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -29,7 +29,7 @@ async fn main() -> Result<()> {
 
     info!("Initializing node on {}", public_addr);
 
-    let node = Node::new(Config::new(k), &hostname, &port)?;
+    let node = PastryNode::new(Config::new(k), &hostname, &port)?;
 
     node.bootstrap_and_serve(bootstrap_addr).await?.await?
 }
