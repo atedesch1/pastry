@@ -48,15 +48,17 @@ message GetNodeTableEntryResponse {
 message JoinRequest {
   uint64 id = 1;
   string pub_addr = 2;
-  uint32 matched_digits = 3;
-  repeated NodeEntry routing_table = 4;
+  uint32 hops = 3;
+  uint32 matched_digits = 4;
+  repeated NodeEntry routing_table = 5;
 }
 
 message JoinResponse {
   uint64 id = 1;
   string pub_addr = 2;
-  repeated NodeEntry leaf_set = 3;
-  repeated NodeEntry routing_table = 4;
+  uint32 hops = 3;
+  repeated NodeEntry leaf_set = 4;
+  repeated NodeEntry routing_table = 5;
 }
 
 message LeaveRequest {
@@ -66,18 +68,20 @@ message LeaveRequest {
 message QueryRequest {
   uint64 from_id = 1;
   uint32 matched_digits = 2;
+  uint32 hops = 3;
 
-  QueryType query_type = 3;
-  uint64 key = 4;
-  optional bytes value = 5;
+  QueryType query_type = 4;
+  uint64 key = 5;
+  optional bytes value = 6;
 }
 
 message QueryResponse {
   uint64 from_id = 1;
+  uint32 hops = 2;
 
-  uint64 key = 2;
-  optional bytes value = 3;
-  optional QueryError error = 4;
+  uint64 key = 3;
+  optional bytes value = 4;
+  optional QueryError error = 5;
 }
 
 message TransferKeysRequest {

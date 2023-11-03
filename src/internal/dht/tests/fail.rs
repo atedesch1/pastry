@@ -60,6 +60,7 @@ async fn test_fail() -> Result<()> {
                 .query(QueryRequest {
                     from_id: 0,
                     matched_digits: 0,
+                    hops: 0,
                     query_type: QueryType::Get.into(),
                     key: node_info.id,
                     value: None,

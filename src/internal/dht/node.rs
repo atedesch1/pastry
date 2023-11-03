@@ -265,6 +265,7 @@ impl Node {
             .join(JoinRequest {
                 id: self.id,
                 pub_addr: self.pub_addr.clone(),
+                hops: 0,
                 matched_digits: 0,
                 routing_table: Vec::new(),
             })

@@ -73,6 +73,7 @@ async fn test_transfer_keys() -> Result<()> {
         .query(QueryRequest {
             from_id: 0,
             matched_digits: 0,
+            hops: 0,
             query_type: QueryType::Set.into(),
             key: u64::MAX - 5,
             value: Some("first".as_bytes().to_vec()),
@@ -82,6 +83,7 @@ async fn test_transfer_keys() -> Result<()> {
         .query(QueryRequest {
             from_id: 0,
             matched_digits: 0,
+            hops: 0,
             query_type: QueryType::Set.into(),
             key: 5,
             value: Some("second".as_bytes().to_vec()),
@@ -91,6 +93,7 @@ async fn test_transfer_keys() -> Result<()> {
         .query(QueryRequest {
             from_id: 0,
             matched_digits: 0,
+            hops: 0,
             query_type: QueryType::Set.into(),
             key: 15,
             value: Some("third".as_bytes().to_vec()),
@@ -104,6 +107,7 @@ async fn test_transfer_keys() -> Result<()> {
         .query(QueryRequest {
             from_id: 0,
             matched_digits: 0,
+            hops: 0,
             query_type: QueryType::Get.into(),
             key: u64::MAX - 5,
             value: None,
@@ -117,6 +121,7 @@ async fn test_transfer_keys() -> Result<()> {
         .query(QueryRequest {
             from_id: 0,
             matched_digits: 0,
+            hops: 0,
             query_type: QueryType::Get.into(),
             key: 5,
             value: None,
@@ -130,6 +135,7 @@ async fn test_transfer_keys() -> Result<()> {
         .query(QueryRequest {
             from_id: 0,
             matched_digits: 0,
+            hops: 0,
             query_type: QueryType::Get.into(),
             key: 15,
             value: None,

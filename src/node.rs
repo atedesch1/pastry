@@ -95,6 +95,7 @@ impl PastryNode {
             .query(Request::new(QueryRequest {
                 from_id: 0,
                 matched_digits: 0,
+                hops: 0,
                 query_type: QueryType::Get.into(),
                 key: Sha256Hasher::hash_once(key),
                 value: None,
@@ -129,6 +130,7 @@ impl PastryNode {
             .query(Request::new(QueryRequest {
                 from_id: 0,
                 matched_digits: 0,
+                hops: 0,
                 query_type: QueryType::Set.into(),
                 key: Sha256Hasher::hash_once(key),
                 value: Some(value.to_vec()),
@@ -160,6 +162,7 @@ impl PastryNode {
             .query(Request::new(QueryRequest {
                 from_id: 0,
                 matched_digits: 0,
+                hops: 0,
                 query_type: QueryType::Delete.into(),
                 key: Sha256Hasher::hash_once(key),
                 value: None,

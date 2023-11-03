@@ -105,6 +105,7 @@ impl NodeService for Node {
                 return Ok(Response::new(JoinResponse {
                     id: self.id,
                     pub_addr: self.pub_addr.to_string(),
+                    hops: req.hops,
                     leaf_set,
                     routing_table,
                 }));
@@ -114,6 +115,7 @@ impl NodeService for Node {
         let mut request = req.clone();
         request.routing_table = routing_table;
         request.matched_digits = util::get_num_matched_digits(self.id, req.id)?;
+        request.hops += 1;
 
         if let Some(res) = self.join_with_leaf_set(&request).await? {
             return Ok(res);
@@ -151,6 +153,7 @@ impl NodeService for Node {
                 return match self.execute_query(req).await {
                     Ok(value) => Ok(Response::new(QueryResponse {
                         from_id: self.id,
+                        hops: req.hops,
                         key: req.key,
                         value,
                         error: None,
@@ -160,6 +163,7 @@ impl NodeService for Node {
 
                         Ok(Response::new(QueryResponse {
                             from_id: self.id,
+                            hops: req.hops,
                             key: req.key,
                             value: None,
                             error: Some(
@@ -178,6 +182,7 @@ impl NodeService for Node {
         let mut request = req.clone();
         request.from_id = self.id;
         request.matched_digits = util::get_num_matched_digits(self.id, req.key)?;
+        request.hops += 1;
 
         if let Some(res) = self.query_with_leaf_set(&request).await? {
             return Ok(res);
