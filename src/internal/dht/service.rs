@@ -419,12 +419,16 @@ impl Node {
         request: &QueryRequest,
     ) -> std::result::Result<Option<Response<QueryResponse>>, Status> {
         let (node, _) = match self
-            .route_with_routing_table(request.key, request.matched_digits as usize + 1)
+            .route_with_routing_table(request.key, request.matched_digits as usize)
             .await
         {
             Some(res) => res,
             None => return Ok(None),
         };
+
+        if node.id == self.id {
+            return Ok(None);
+        }
 
         let err: Error = match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
             Ok(mut client) => match client.query(request.clone()).await {
