@@ -1,13 +1,11 @@
 use std::time::{SystemTime, UNIX_EPOCH};
-
-use super::setup::*;
-use crate::{
-    error::Result,
-    hring::hasher::Sha256Hasher,
-    pastry::shared::Config,
-    rpc::node::{QueryRequest, QueryType},
-};
 use tonic::Request;
+
+use super::{super::grpc::*, setup::*};
+use crate::{
+    error::*,
+    internal::{hring::hasher::Sha256Hasher, pastry::shared::Config},
+};
 
 fn find_responsible(nodes: &Vec<NetworkNode>, key: u64) -> usize {
     let mut position = match nodes.binary_search_by_key(&key, |f| f.info.id) {

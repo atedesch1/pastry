@@ -1,10 +1,7 @@
 extern crate pastry_dht;
 
 use log::info;
-use pastry_dht::{
-    error::{Error, Result},
-    Config, PastryNode,
-};
+use pastry_dht::{error::*, node::PastryNode, Config};
 use std::env;
 
 #[tokio::main]

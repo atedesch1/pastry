@@ -1,11 +1,12 @@
+use super::shared::KeyValuePair;
 use crate::{
-    error::{Error, Result},
-    hring::ring::{Ring, Ring64},
-    util,
+    error::*,
+    internal::{
+        hring::ring::{Ring, Ring64},
+        util,
+    },
 };
 use std::{fmt::Display, vec};
-
-use super::shared::KeyValuePair;
 
 /// LeafSet is a data structure used in the Pastry routing algorithm.
 /// The leaf set is a data structure that holds connection information

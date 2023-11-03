@@ -3,24 +3,19 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::{Request, Response, Status};
 
+use super::{grpc::*, node::Node};
+
 use crate::{
-    dht::node::{Node, NodeState},
-    error::Error,
-    hring::ring::{Ring, Ring64},
-    rpc::node::{
-        node_service_client::NodeServiceClient, node_service_server::NodeService,
-        AnnounceArrivalRequest, FixLeafSetRequest, GetNodeIdResponse, GetNodeStateResponse,
-        GetNodeTableEntryRequest, GetNodeTableEntryResponse, JoinRequest, JoinResponse,
-        KeyValueEntry, LeaveRequest, NodeEntry, QueryError, QueryRequest, QueryResponse, QueryType,
-        TransferKeysRequest,
+    error::*,
+    internal::{
+        dht::node::{NodeInfo, NodeState},
+        hring::ring::*,
+        util::{self, U64_HEX_NUM_OF_DIGITS},
     },
-    util::{self, U64_HEX_NUM_OF_DIGITS},
 };
 
-use super::node::NodeInfo;
-
 #[tonic::async_trait]
-impl NodeService for super::node::Node {
+impl NodeService for Node {
     async fn get_node_id(
         &self,
         _request: Request<()>,
@@ -292,10 +287,7 @@ impl NodeService for super::node::Node {
             return Ok(Response::new(()));
         }
 
-        let node = NodeInfo {
-            id: req.id,
-            pub_addr: req.pub_addr.clone(),
-        };
+        let node = NodeInfo::new(req.id, &req.pub_addr);
 
         self.fix_leaf_entry(&node).await?;
 

@@ -2,8 +2,10 @@ use core::fmt;
 
 use crate::{
     error::Result,
-    hring::ring::{Ring, Ring64},
-    util::{self, get_nth_digit_in_u64_hex, HEX_BASE, U64_HEX_NUM_OF_DIGITS},
+    internal::{
+        hring::ring::{Ring, Ring64},
+        util::*,
+    },
 };
 
 use super::shared::KeyValuePair;
@@ -78,7 +80,7 @@ impl<T: Clone> RoutingTable<T> {
             return Ok(None);
         }
 
-        let matched_digits = util::get_num_matched_digits(self.node.key, key)? as usize;
+        let matched_digits = get_num_matched_digits(self.node.key, key)? as usize;
         let row_index = matched_digits.min(self.table.len() - 1);
 
         if min_matched_digits > row_index {
@@ -86,7 +88,7 @@ impl<T: Clone> RoutingTable<T> {
         }
 
         let row = &self.table[row_index];
-        let key_digit = util::get_nth_digit_in_u64_hex(key, row_index)?;
+        let key_digit = get_nth_digit_in_u64_hex(key, row_index)?;
 
         let mut closest: Option<&KeyValuePair<u64, T>> = None;
 
@@ -139,7 +141,7 @@ impl<T> fmt::Display for RoutingTable<T> {
             if i > 0 {
                 matched = format!(
                     "{:0width$X}",
-                    util::get_first_digits_in_u64_hex(self.node.key, i).unwrap(),
+                    get_first_digits_in_u64_hex(self.node.key, i).unwrap(),
                     width = i
                 ) + &matched;
             }

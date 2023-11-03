@@ -1,25 +1,21 @@
-use std::{net::SocketAddr, sync::Arc, time::Duration};
-
 use log::{debug, info, warn};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     sync::{Notify, RwLock, RwLockWriteGuard},
     task::JoinHandle,
 };
 use tonic::transport::{Channel, Server};
 
-use crate::{
-    error::{Error, Result},
-    hring::hasher::Sha256Hasher,
-    pastry::{leaf::LeafSet, shared::Config, table::RoutingTable},
-    rpc::node::{
-        node_service_client::NodeServiceClient, node_service_server::NodeServiceServer,
-        AnnounceArrivalRequest, FixLeafSetRequest, GetNodeTableEntryRequest, JoinRequest,
-        NodeEntry, QueryRequest, QueryType, TransferKeysRequest,
-    },
-    util::{self, U64_HEX_NUM_OF_DIGITS},
-};
+use super::{grpc::*, store::Store};
 
-use super::store::Store;
+use crate::{
+    error::*,
+    internal::{
+        hring::hasher::Sha256Hasher,
+        pastry::{leaf::LeafSet, shared::Config, table::RoutingTable},
+        util::{self, U64_HEX_NUM_OF_DIGITS},
+    },
+};
 
 #[derive(Debug, Clone)]
 pub struct NodeInfo {

@@ -1,9 +1,6 @@
-mod dht;
 pub mod error;
-mod hring;
-mod pastry;
-mod rpc;
-mod util;
+mod internal;
 
-pub use dht::PastryNode;
-pub use pastry::shared::Config;
+pub mod client;
+pub mod node;
+pub use internal::pastry::shared::Config;

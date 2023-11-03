@@ -1,14 +1,15 @@
-use crate::{
-    dht::node::Node,
-    error::Result,
-    pastry::shared::Config,
-    rpc::node::{QueryRequest, QueryType},
-    util::get_neighbors,
-};
 use tonic::Request;
 
-use super::setup::*;
-use super::util::*;
+use crate::{
+    error::*,
+    internal::{pastry::shared::Config, util::get_neighbors},
+};
+
+use super::{
+    super::{grpc::*, node::*},
+    setup::*,
+    util::*,
+};
 
 #[tokio::test(flavor = "multi_thread")]
 #[serial_test::serial]
