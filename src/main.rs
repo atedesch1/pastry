@@ -3,11 +3,9 @@ extern crate pastry_dht;
 use log::info;
 use pastry_dht::{
     error::{Error, Result},
-    pastry::shared::Config,
+    Config, PastryNode,
 };
 use std::env;
-
-use pastry_dht::dht::PastryNode;
 
 #[tokio::main]
 async fn main() -> Result<()> {

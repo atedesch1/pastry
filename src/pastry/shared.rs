@@ -18,12 +18,25 @@ impl<T, U> KeyValuePair<T, U> {
     }
 }
 
+/// Pastry Network Config
+///
 #[derive(Debug, Clone)]
 pub struct Config {
     pub k: usize,
 }
 
 impl Config {
+    /// Creates a new Pastry `Config` instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `leaf_set_k` - The number of neighbors on each side that a node in
+    /// the Pastry network will have.
+    ///
+    /// # Returns
+    ///
+    /// A new Pastry `Config` object.
+    ///
     pub fn new(leaf_set_k: usize) -> Self {
         Config { k: leaf_set_k }
     }
