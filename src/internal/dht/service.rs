@@ -253,27 +253,18 @@ impl NodeService for Node {
 
         let mut data = self.state.data.write().await;
 
+        let node_entry = NodeEntry {
+            id: req.id,
+            pub_addr: req.pub_addr.clone(),
+        };
+
         if let Some(entry) = data.leaf.get(req.id) {
             if entry.id != req.id {
-                self.update_leaf_set(
-                    &mut data,
-                    &NodeEntry {
-                        id: req.id,
-                        pub_addr: req.pub_addr.clone(),
-                    },
-                )
-                .await?;
+                self.update_leaf_set(&mut data, &node_entry).await?;
             }
         }
 
-        self.update_routing_table(
-            &mut data,
-            &NodeEntry {
-                id: req.id,
-                pub_addr: req.pub_addr.clone(),
-            },
-        )
-        .await?;
+        self.update_routing_table(&mut data, &node_entry).await?;
 
         self.change_state(NodeState::RoutingRequests).await;
         Ok(Response::new(()))
