@@ -310,6 +310,28 @@ impl NodeService for Node {
 
 // Helper functions
 impl Node {
+    async fn connect_and_join(
+        &self,
+        node: &NodeInfo,
+        request: JoinRequest,
+    ) -> Result<Response<JoinResponse>> {
+        match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
+            Ok(mut client) => Ok(client.join(request.clone()).await?),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    async fn connect_and_query(
+        &self,
+        node: &NodeInfo,
+        request: QueryRequest,
+    ) -> Result<Response<QueryResponse>> {
+        match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
+            Ok(mut client) => Ok(client.query(request.clone()).await?),
+            Err(err) => Err(err.into()),
+        }
+    }
+
     // JOIN
     async fn join_with_leaf_set(
         &self,
@@ -318,19 +340,13 @@ impl Node {
         loop {
             let node = match self.route_with_leaf_set(request.id).await {
                 Some(node) => node,
-                None => return Ok(None),
+                None => break Ok(None),
             };
 
-            // Forward to neighbor in leaf set
-            let err: Error = match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
-                Ok(mut client) => match client.join(request.clone()).await {
-                    Ok(r) => return Ok(Some(r)),
-                    Err(err) => err.into(),
-                },
-                Err(err) => err.into(),
-            };
-
-            self.warn_and_fix_leaf_entry(&node, &err.to_string()).await;
+            match self.connect_and_join(&node, request.clone()).await {
+                Ok(r) => break Ok(Some(r)),
+                Err(err) => self.warn_and_fix_leaf_entry(&node, &err.to_string()).await,
+            }
         }
     }
 
@@ -350,15 +366,10 @@ impl Node {
             return Ok(None);
         }
 
-        let err: Error = match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
-            Ok(mut client) => match client.join(request.clone()).await {
-                Ok(r) => return Ok(Some(r)),
-                Err(err) => err.into(),
-            },
-            Err(err) => err.into(),
-        };
-
-        self.warn_and_fix_table_entry(&node, &err.to_string()).await;
+        match self.connect_and_join(&node, request.clone()).await {
+            Ok(r) => return Ok(Some(r)),
+            Err(err) => self.warn_and_fix_table_entry(&node, &err.to_string()).await,
+        }
 
         Ok(None)
     }
@@ -374,15 +385,10 @@ impl Node {
                 panic!("#{:016X}: Could not route join request", self.id);
             }
 
-            let err: Error = match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
-                Ok(mut client) => match client.join(request.clone()).await {
-                    Ok(r) => return Ok(r),
-                    Err(err) => err.into(),
-                },
-                Err(err) => err.into(),
-            };
-
-            self.warn_and_fix_leaf_entry(&node, &err.to_string()).await;
+            match self.connect_and_join(&node, request.clone()).await {
+                Ok(r) => break Ok(r),
+                Err(err) => self.warn_and_fix_leaf_entry(&node, &err.to_string()).await,
+            }
         }
     }
 
@@ -397,16 +403,10 @@ impl Node {
                 None => return Ok(None),
             };
 
-            // Forward query to neighbor in leaf set
-            let err: Error = match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
-                Ok(mut client) => match client.query(request.clone()).await {
-                    Ok(r) => return Ok(Some(r)),
-                    Err(err) => err.into(),
-                },
-                Err(err) => err.into(),
-            };
-
-            self.warn_and_fix_leaf_entry(&node, &err.to_string()).await;
+            match self.connect_and_query(&node, request.clone()).await {
+                Ok(r) => break Ok(Some(r)),
+                Err(err) => self.warn_and_fix_leaf_entry(&node, &err.to_string()).await,
+            }
         }
     }
 
@@ -426,15 +426,10 @@ impl Node {
             return Ok(None);
         }
 
-        let err: Error = match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
-            Ok(mut client) => match client.query(request.clone()).await {
-                Ok(r) => return Ok(Some(r)),
-                Err(err) => err.into(),
-            },
-            Err(err) => err.into(),
-        };
-
-        self.warn_and_fix_table_entry(&node, &err.to_string()).await;
+        match self.connect_and_query(&node, request.clone()).await {
+            Ok(r) => return Ok(Some(r)),
+            Err(err) => self.warn_and_fix_table_entry(&node, &err.to_string()).await,
+        }
 
         Ok(None)
     }
@@ -446,15 +441,10 @@ impl Node {
         loop {
             let (node, _) = self.get_closest_from_leaf_set(request.key).await;
 
-            let err: Error = match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
-                Ok(mut client) => match client.query(request.clone()).await {
-                    Ok(r) => return Ok(r),
-                    Err(err) => err.into(),
-                },
-                Err(err) => err.into(),
-            };
-
-            self.warn_and_fix_leaf_entry(&node, &err.to_string()).await;
+            match self.connect_and_query(&node, request.clone()).await {
+                Ok(r) => break Ok(r),
+                Err(err) => self.warn_and_fix_leaf_entry(&node, &err.to_string()).await,
+            }
         }
     }
 }
