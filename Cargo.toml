@@ -2,7 +2,7 @@
 name = "pastry-dht"
 description = "A Pastry DHT protocol implementation in Rust."
 authors = ["Alvaro Tedeschi"]
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 license-file = "./LICENSE"
 
