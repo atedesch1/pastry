@@ -17,13 +17,10 @@ impl KVStoreNode {
     }
 
     pub async fn serve(&mut self, bootstrap_addr: Option<&str>) -> Result<()> {
-        let handle = self
-            .pastry_node
+        self.pastry_node
             .clone()
             .bootstrap_and_serve(bootstrap_addr)
-            .await?;
-
-        Ok(())
+            .await
     }
 }
 

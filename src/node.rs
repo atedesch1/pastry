@@ -1,4 +1,3 @@
-use tokio::task::JoinHandle;
 use tonic::Request;
 
 use crate::{
@@ -47,13 +46,10 @@ impl PastryNode {
     ///
     /// # Returns
     ///
-    /// A Result containing the JoinHandle for the server.
+    /// An empty Result
     ///
-    pub async fn bootstrap_and_serve(
-        self,
-        bootstrap_addr: Option<&str>,
-    ) -> Result<JoinHandle<Result<()>>> {
-        self.node.bootstrap_and_serve(bootstrap_addr).await
+    pub async fn bootstrap_and_serve(self, bootstrap_addr: Option<&str>) -> Result<()> {
+        self.node.bootstrap_and_serve(bootstrap_addr).await?.await?
     }
 
     /// Gets the internal Pastry node ID.
