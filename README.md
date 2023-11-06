@@ -68,4 +68,5 @@ This should print 'Value read from Pastry network: rocks!'
 - [x] Handle node failures
 - [ ] Handle range queries
 - [ ] Handle concurrent node arrivals
-- [ ] Handle concurrent node failures 
+- [ ] Handle concurrent node failures
+- [ ] Handle data replication
