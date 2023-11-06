@@ -2,7 +2,7 @@
 name = "pastry-dht"
 description = "A Pastry DHT protocol implementation in Rust."
 authors = ["Alvaro Tedeschi"]
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 license-file = "./LICENSE"
 
@@ -16,7 +16,7 @@ tokio-stream = "0.1.14"
 futures-core = "0.3.29"
 tonic = "0.10.2"
 prost = "0.12.1"
-serial_test = "0.5"
+serial_test = "2.0.0"
 
 [build-dependencies]
 tonic-build = "0.10.2"
