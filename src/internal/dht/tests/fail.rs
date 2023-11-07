@@ -15,15 +15,13 @@ use super::{
 #[serial_test::serial]
 async fn test_fail() -> Result<()> {
     let mut network = Network::new(NetworkConfiguration {
-        pastry_conf: Config::new(2),
-        // num_nodes: 8,
-        num_nodes: 100,
+        pastry_conf: Config::new(8),
+        num_nodes: 512,
     })
-    // .with_ids(vec![0, 1, 2, 3, 4, 5, 6, 7])
     .init()
     .await?;
 
-    for _ in 0..50 {
+    for _ in 0..256 {
         let random_index = rand::thread_rng().gen_range(0..network.nodes.len());
         let node = &network.nodes[random_index];
         let node_info = node.info.clone();
@@ -45,15 +43,6 @@ async fn test_fail() -> Result<()> {
         // leaf set and get their state
         for neighbor in prev_neighbors {
             let mut client = Node::connect_with_retry(&neighbor.pub_addr).await?;
-
-            // let state = client.get_node_state(()).await?.into_inner();
-            // let leaf_set = state
-            //     .leaf_set
-            //     .clone()
-            //     .iter()
-            //     .map(|f| f.id)
-            //     .collect::<Vec<u64>>();
-            // info!("NODE leaf set: {}", format_ids(leaf_set));
 
             // query neighbor for node
             client
