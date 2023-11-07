@@ -1,46 +1,35 @@
 pub mod join;
 pub mod query;
+pub mod state;
 
-use log::{info, warn};
-use tokio::sync::mpsc;
+use log::info;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::{Request, Response, Status};
 
 use super::{grpc::*, node::Node};
 
-use crate::{
-    error::*,
-    internal::{
-        dht::node::{NodeInfo, NodeState},
-        hring::ring::*,
-        util::{self, U64_HEX_NUM_OF_DIGITS},
-    },
-};
-
 #[tonic::async_trait]
 impl NodeService for Node {
+    // INFO
     async fn get_node_state(
         &self,
         _request: Request<()>,
     ) -> std::result::Result<Response<GetNodeStateResponse>, Status> {
         info!("#{:016X}: Got request for get_node_state", self.id);
         self.block_until_routing_requests().await;
-
-        Ok(Response::new(GetNodeStateResponse {
-            id: self.id,
-            leaf_set: self
-                .state
-                .data
-                .read()
-                .await
-                .leaf
-                .get_set()
-                .iter()
-                .map(|&e| e.clone().to_node_entry())
-                .collect(),
-        }))
+        self.get_node_state_service().await
     }
 
+    async fn get_node_table_entry(
+        &self,
+        request: Request<GetNodeTableEntryRequest>,
+    ) -> std::result::Result<Response<GetNodeTableEntryResponse>, Status> {
+        info!("#{:016X}: Got request for get_node_table_entry", self.id);
+        self.block_until_routing_requests().await;
+        self.get_node_table_entry_service(request.get_ref()).await
+    }
+
+    // MAIN
     async fn join(
         &self,
         request: Request<JoinRequest>,
@@ -70,6 +59,7 @@ impl NodeService for Node {
         self.transfer_keys_service(request.get_ref()).await
     }
 
+    // UPDATE
     async fn announce_arrival(
         &self,
         request: Request<AnnounceArrivalRequest>,
@@ -85,34 +75,6 @@ impl NodeService for Node {
     ) -> std::result::Result<Response<()>, Status> {
         info!("#{:016X}: Got request for fix_leaf_set", self.id);
         self.block_until_routing_requests().await;
-
-        let req = request.get_ref();
-
-        if let None = self.state.data.read().await.leaf.get(req.id) {
-            return Ok(Response::new(()));
-        }
-
-        let node = NodeInfo::new(req.id, &req.pub_addr);
-
-        self.fix_leaf_entry(&node).await?;
-
-        Ok(Response::new(()))
-    }
-
-    async fn get_node_table_entry(
-        &self,
-        request: Request<GetNodeTableEntryRequest>,
-    ) -> std::result::Result<Response<GetNodeTableEntryResponse>, Status> {
-        info!("#{:016X}: Got request for get_node_table_entry", self.id);
-        self.block_until_routing_requests().await;
-
-        let req = request.get_ref();
-
-        let node = match self.state.data.read().await.table.get_row(req.row as usize) {
-            Some(row) => row[req.column as usize].map(|node| node.clone().to_node_entry()),
-            None => None,
-        };
-
-        Ok(Response::new(GetNodeTableEntryResponse { node }))
+        self.fix_leaf_set_service(request.get_ref()).await
     }
 }
