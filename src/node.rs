@@ -1,3 +1,5 @@
+use std::net::SocketAddr;
+
 use tonic::Request;
 
 use crate::{
@@ -24,16 +26,16 @@ impl PastryNode {
     /// # Arguments
     ///
     /// * `config` - The Pastry network configuration.
-    /// * `hostname` - The Hostname to serve this node on.
-    /// * `port` - The port to serve this node on.
+    /// * `addr` - The address of the socket to listen on.
+    /// * `pub_addr` - The address the node will be exposed on.
     ///
     /// # Returns
     ///
     /// A Result containing the newly registered node.
     ///
-    pub fn new(config: Config, hostname: &str, port: &str) -> Result<Self> {
+    pub fn new(config: Config, addr: SocketAddr, pub_addr: SocketAddr) -> Result<Self> {
         Ok(PastryNode {
-            node: Node::new(config, hostname, port)?,
+            node: Node::new(config, addr, pub_addr)?,
         })
     }
 

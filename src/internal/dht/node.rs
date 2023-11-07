@@ -68,7 +68,7 @@ pub struct StateData {
 #[derive(Debug, Clone)]
 pub struct Node {
     pub id: u64,
-    pub addr: String,
+    pub addr: SocketAddr,
     pub pub_addr: String,
 
     pub state: Arc<State>,
@@ -91,18 +91,17 @@ impl Node {
     /// # Arguments
     ///
     /// * `config` - The Pastry network configuration.
-    /// * `hostname` - The Hostname to serve this node on.
-    /// * `port` - The port to serve this node on.
+    /// * `addr` - The address of the socket to listen on.
+    /// * `pub_addr` - The address the node will be exposed on.
     ///
     /// # Returns
     ///
     /// A Result containing the newly registered node.
     ///
-    pub fn new(config: Config, hostname: &str, port: &str) -> Result<Self> {
-        let pub_addr = format!("http://{}:{}", hostname, port);
-        let addr = format!("0.0.0.0:{}", port);
-
+    pub fn new(config: Config, addr: SocketAddr, pub_addr: SocketAddr) -> Result<Self> {
+        let pub_addr = format!("http://{}:{}", pub_addr.ip(), pub_addr.port());
         let id = Sha256Hasher::hash_once(pub_addr.as_bytes());
+
         info!("#{:016X}: Registered node", id);
 
         let info = NodeInfo::new(id, &pub_addr);
@@ -130,17 +129,21 @@ impl Node {
     /// # Arguments
     ///
     /// * `config` - The Pastry network configuration.
-    /// * `hostname` - The Hostname to serve this node on.
-    /// * `port` - The port to serve this node on.
+    /// * `addr` - The address of the socket to listen on.
+    /// * `pub_addr` - The address the node will be exposed on.
     /// * `id` - The node's id.
     ///
     /// # Returns
     ///
     /// A Result containing the newly registered node.
     ///
-    pub fn from_id(config: Config, hostname: &str, port: &str, id: u64) -> Result<Self> {
-        let pub_addr = format!("http://{}:{}", hostname, port);
-        let addr = format!("0.0.0.0:{}", port);
+    pub fn from_id(
+        config: Config,
+        addr: SocketAddr,
+        pub_addr: SocketAddr,
+        id: u64,
+    ) -> Result<Self> {
+        let pub_addr = format!("http://{}:{}", pub_addr.ip(), pub_addr.port());
 
         info!("#{:016X}: Registered node", id);
 
@@ -238,8 +241,7 @@ impl Node {
 
     /// Initializes gRPC server
     async fn initialize_server(&self) -> Result<JoinHandle<Result<()>>> {
-        let addr: SocketAddr = self.addr.clone().parse()?;
-        let incoming = tonic::transport::server::TcpIncoming::new(addr, true, None)?;
+        let incoming = tonic::transport::server::TcpIncoming::new(self.addr, true, None)?;
 
         let node = self.clone();
         Ok(tokio::spawn(async move {

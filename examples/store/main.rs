@@ -1,4 +1,5 @@
 use std::env;
+use std::net::SocketAddr;
 
 use log::info;
 use pastry_dht::error::*;
@@ -9,10 +10,10 @@ struct KVStoreNode {
 }
 
 impl KVStoreNode {
-    pub fn new(hostname: &str, port: &str) -> Result<Self> {
+    pub fn new(addr: SocketAddr, pub_addr: SocketAddr) -> Result<Self> {
         let config = Config::new(16);
         Ok(KVStoreNode {
-            pastry_node: PastryNode::new(config, hostname, port)?,
+            pastry_node: PastryNode::new(config, addr, pub_addr)?,
         })
     }
 
@@ -35,12 +36,8 @@ async fn main() -> Result<()> {
 
     env_logger::init();
 
-    let hostname = std::env::var("NODE_HOSTNAME").unwrap_or("0.0.0.0".to_owned());
-    let public_addr = format!("http://{}:{}", hostname, port);
+    let addr: SocketAddr = format!("0.0.0.0:{}", port).parse()?;
+    info!("Initializing node on {}", addr);
 
-    info!("Initializing node on {}", public_addr);
-
-    KVStoreNode::new(&hostname, &port)?
-        .serve(bootstrap_addr)
-        .await
+    KVStoreNode::new(addr, addr)?.serve(bootstrap_addr).await
 }

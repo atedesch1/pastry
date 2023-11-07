@@ -1,6 +1,7 @@
 use core::fmt;
 use log::warn;
 use rand::Rng;
+use std::net::SocketAddr;
 use tokio::task::JoinHandle;
 use tonic::transport::Channel;
 
@@ -127,19 +128,11 @@ impl Network {
     pub async fn init_by_join(mut self) -> Result<Self> {
         while self.num_deployed < self.conf.num_nodes {
             let (info, handle) = loop {
+                let addr: SocketAddr = format!("0.0.0.0:{}", self.available_port).parse()?;
                 let node = if let Some(&id) = self.ids.get(self.num_deployed as usize) {
-                    Node::from_id(
-                        self.conf.pastry_conf.clone(),
-                        "0.0.0.0",
-                        &self.available_port.to_string(),
-                        id,
-                    )?
+                    Node::from_id(self.conf.pastry_conf.clone(), addr, addr, id)?
                 } else {
-                    Node::new(
-                        self.conf.pastry_conf.clone(),
-                        "0.0.0.0",
-                        &self.available_port.to_string(),
-                    )?
+                    Node::new(self.conf.pastry_conf.clone(), addr, addr)?
                 };
 
                 match self.setup_node(node).await {
@@ -171,19 +164,11 @@ impl Network {
         let mut nodes: Vec<Node> = Vec::new();
         while self.num_deployed < self.conf.num_nodes {
             let (node, handle) = loop {
+                let addr: SocketAddr = format!("0.0.0.0:{}", self.available_port).parse()?;
                 let node = if let Some(&id) = self.ids.get(self.num_deployed as usize) {
-                    Node::from_id(
-                        self.conf.pastry_conf.clone(),
-                        "0.0.0.0",
-                        &self.available_port.to_string(),
-                        id,
-                    )?
+                    Node::from_id(self.conf.pastry_conf.clone(), addr, addr, id)?
                 } else {
-                    Node::new(
-                        self.conf.pastry_conf.clone(),
-                        "0.0.0.0",
-                        &self.available_port.to_string(),
-                    )?
+                    Node::new(self.conf.pastry_conf.clone(), addr, addr)?
                 };
 
                 match node.serve().await {
@@ -232,19 +217,11 @@ impl Network {
 
     pub async fn add_node(&mut self) -> Result<NodeInfo> {
         let (info, handle) = loop {
+            let addr: SocketAddr = format!("0.0.0.0:{}", self.available_port).parse()?;
             let node = if let Some(&id) = self.ids.get(self.num_deployed as usize) {
-                Node::from_id(
-                    self.conf.pastry_conf.clone(),
-                    "0.0.0.0",
-                    &self.available_port.to_string(),
-                    id,
-                )?
+                Node::from_id(self.conf.pastry_conf.clone(), addr, addr, id)?
             } else {
-                Node::new(
-                    self.conf.pastry_conf.clone(),
-                    "0.0.0.0",
-                    &self.available_port.to_string(),
-                )?
+                Node::new(self.conf.pastry_conf.clone(), addr, addr)?
             };
 
             match self.setup_node(node).await {

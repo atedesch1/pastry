@@ -21,24 +21,23 @@ Running a simple PastryNode with parameter **k=8**:
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
-    let hostname = args.get(1).unwrap();
-    let port = args.get(2).unwrap();
-    let bootstrap_addr = args.get(3).map(|s| s.as_str());
+    let addr = args.get(1).unwrap().parse()?;
+    let bootstrap_addr = args.get(2).map(|s| s.as_str());
 
     env_logger::Builder::from_default_env()
         .filter_level(log::LevelFilter::Info)
         .init();
 
-    Ok(PastryNode::new(Config::new(8), &hostname, &port)?
+    Ok(PastryNode::new(Config::new(8), addr, addr)?
         .bootstrap_and_serve(bootstrap_addr)
         .await?)
 }
 ```
 
 > Run in three different terminals
-  1. `cargo run 0.0.0.0 50000`
-  2. `cargo run 0.0.0.0 50001 http://0.0.0.0:50000`
-  3. `cargo run 0.0.0.0 50002 http://0.0.0.0:50001`
+  1. `cargo run 0.0.0.0:50000`
+  2. `cargo run 0.0.0.0:50001 http://0.0.0.0:50000`
+  3. `cargo run 0.0.0.0:50002 http://0.0.0.0:50001`
 
 This will spin up a 3-node network.
 
