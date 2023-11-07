@@ -6,7 +6,8 @@ use tokio::{
 };
 use tonic::transport::{Channel, Server};
 
-use super::{grpc::*, store::Store};
+use super::service::grpc::*;
+use super::store::Store;
 
 use crate::{
     error::*,

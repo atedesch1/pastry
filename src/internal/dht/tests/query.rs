@@ -2,7 +2,7 @@ use log::info;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tonic::Request;
 
-use super::{super::grpc::*, setup::*};
+use super::{super::service::grpc::*, setup::*};
 use crate::{
     error::*,
     internal::{hring::hasher::Sha256Hasher, pastry::shared::Config},

@@ -6,7 +6,7 @@ use log::info;
 use rand::Rng;
 
 use super::{
-    super::{grpc::*, node::*},
+    super::{node::*, service::grpc::*},
     setup::*,
     util::*,
 };

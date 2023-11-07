@@ -1,6 +1,7 @@
 use tonic::{Response, Status};
 
-use super::super::{grpc::*, node::Node};
+use super::super::node::Node;
+use super::grpc::*;
 
 use crate::internal::dht::node::NodeInfo;
 

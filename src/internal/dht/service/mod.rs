@@ -1,3 +1,4 @@
+pub mod grpc;
 pub mod join;
 pub mod query;
 pub mod state;
@@ -6,7 +7,8 @@ use log::info;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::{Request, Response, Status};
 
-use super::{grpc::*, node::Node};
+use super::node::Node;
+use grpc::*;
 
 #[tonic::async_trait]
 impl NodeService for Node {

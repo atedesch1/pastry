@@ -6,7 +6,7 @@ use crate::{
 };
 
 use super::{
-    super::{grpc::*, node::*},
+    super::{node::*, service::grpc::*},
     setup::*,
     util::*,
 };

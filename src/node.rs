@@ -3,7 +3,7 @@ use tonic::Request;
 use crate::{
     error::*,
     internal::{
-        dht::{grpc::*, node::Node},
+        dht::{node::Node, service::grpc::*},
         hring::hasher::Sha256Hasher,
         pastry::shared::Config,
     },

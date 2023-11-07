@@ -3,7 +3,7 @@ use tonic::transport::Channel;
 use crate::{
     error::*,
     internal::{
-        dht::grpc::{NodeServiceClient, QueryRequest, QueryType},
+        dht::service::grpc::{NodeServiceClient, QueryRequest, QueryType},
         hring::hasher::Sha256Hasher,
     },
 };

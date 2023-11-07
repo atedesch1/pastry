@@ -9,7 +9,7 @@ use crate::{
     internal::{pastry::shared::Config, util::get_neighbors},
 };
 
-use super::super::{grpc::*, node::*};
+use super::super::{node::*, service::grpc::*};
 
 const INITIAL_PORT: i32 = 30000;
 
