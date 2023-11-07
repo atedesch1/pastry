@@ -1,4 +1,4 @@
-use log::warn;
+use log::{info, warn};
 use tonic::{Response, Status};
 
 use super::super::node::Node;
@@ -129,6 +129,32 @@ impl Node {
         match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
             Ok(mut client) => Ok(client.query(request.clone()).await?),
             Err(err) => Err(err.into()),
+        }
+    }
+
+    pub async fn execute_query(&self, query: &QueryRequest) -> Result<Option<Vec<u8>>> {
+        let key = &query.key;
+        let value = &query.value;
+        let query_type = query.query_type;
+
+        info!(
+            "#{:016X}: Executing query for key {:016X}",
+            self.id, query.key
+        );
+
+        match QueryType::try_from(query_type).unwrap() {
+            QueryType::Set => match value {
+                None => Err(Error::Value("Value not provided".into())),
+                Some(value) => Ok(self.state.store.write().await.set(key, value)),
+            },
+            QueryType::Get => match self.state.store.read().await.get(key) {
+                None => Err(Error::Value("Key not present in database".into())),
+                Some(value) => Ok(Some(value.clone())),
+            },
+            QueryType::Delete => match self.state.store.write().await.delete(key) {
+                None => Err(Error::Value("Key not present in database.".into())),
+                Some(value) => Ok(Some(value)),
+            },
         }
     }
 }
