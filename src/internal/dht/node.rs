@@ -45,7 +45,7 @@ impl NodeInfo {
 
 #[derive(Debug, PartialEq)]
 pub enum NodeState {
-    Unitialized,
+    Uninitialized,
     Initializing,
     UpdatingConnections,
     RoutingRequests,
@@ -113,7 +113,7 @@ impl Node {
             pub_addr: pub_addr.clone(),
 
             state: Arc::new(State {
-                name: RwLock::new(NodeState::Unitialized),
+                name: RwLock::new(NodeState::Uninitialized),
                 notify: Notify::new(),
                 data: RwLock::new(StateData {
                     leaf: LeafSet::new(config.k, id, info.clone())?,
@@ -152,7 +152,7 @@ impl Node {
             pub_addr: pub_addr.clone(),
 
             state: Arc::new(State {
-                name: RwLock::new(NodeState::Unitialized),
+                name: RwLock::new(NodeState::Uninitialized),
                 notify: Notify::new(),
                 data: RwLock::new(StateData {
                     leaf: LeafSet::new(config.k, id, info.clone())?,
