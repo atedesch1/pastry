@@ -43,9 +43,6 @@ impl NodeInfo {
     }
 }
 
-const MAX_CONNECT_RETRIES: usize = 10;
-const CONNECT_TIMEOUT_SECONDS: u64 = 1;
-
 #[derive(Debug, PartialEq)]
 pub enum NodeState {
     Unitialized,
@@ -420,6 +417,9 @@ impl Node {
         }
     }
 
+    const MAX_CONNECT_RETRIES: usize = 10;
+    const CONNECT_TIMEOUT_SECONDS: u64 = 1;
+
     /// Attempts to repeatedly connect to a node and returns a Result containing the client
     pub async fn connect_with_retry(addr: &str) -> Result<NodeServiceClient<Channel>> {
         let mut retries = 0;
@@ -430,15 +430,15 @@ impl Node {
                 Err(err) => {
                     retries += 1;
 
-                    if retries >= MAX_CONNECT_RETRIES {
+                    if retries >= Self::MAX_CONNECT_RETRIES {
                         return Err(err.into());
                     }
 
                     warn!(
                         "Connection failed. Retrying in {} seconds...",
-                        CONNECT_TIMEOUT_SECONDS
+                        Self::CONNECT_TIMEOUT_SECONDS
                     );
-                    tokio::time::sleep(Duration::from_secs(CONNECT_TIMEOUT_SECONDS)).await;
+                    tokio::time::sleep(Duration::from_secs(Self::CONNECT_TIMEOUT_SECONDS)).await;
                 }
             }
         }
