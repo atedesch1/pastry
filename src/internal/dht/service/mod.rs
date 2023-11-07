@@ -1,8 +1,8 @@
-pub mod fail;
+mod fail;
 pub mod grpc;
-pub mod join;
-pub mod query;
-pub mod state;
+mod join;
+mod query;
+mod state;
 
 use log::info;
 use tokio_stream::wrappers::UnboundedReceiverStream;
