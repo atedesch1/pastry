@@ -190,28 +190,3 @@ impl NodeService for Node {
         Ok(Response::new(GetNodeTableEntryResponse { node }))
     }
 }
-
-// Helper functions
-impl Node {
-    async fn connect_and_join(
-        &self,
-        node: &NodeInfo,
-        request: JoinRequest,
-    ) -> Result<Response<JoinResponse>> {
-        match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
-            Ok(mut client) => Ok(client.join(request.clone()).await?),
-            Err(err) => Err(err.into()),
-        }
-    }
-
-    async fn connect_and_query(
-        &self,
-        node: &NodeInfo,
-        request: QueryRequest,
-    ) -> Result<Response<QueryResponse>> {
-        match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
-            Ok(mut client) => Ok(client.query(request.clone()).await?),
-            Err(err) => Err(err.into()),
-        }
-    }
-}

@@ -2,7 +2,13 @@ use tonic::{Response, Status};
 
 use super::super::{grpc::*, node::Node};
 
-use crate::internal::util::{self, U64_HEX_NUM_OF_DIGITS};
+use crate::{
+    error::*,
+    internal::{
+        dht::node::NodeInfo,
+        util::{self, U64_HEX_NUM_OF_DIGITS},
+    },
+};
 
 impl Node {
     pub async fn join_service(
@@ -82,6 +88,17 @@ impl Node {
     }
 
     // JOIN
+    async fn connect_and_join(
+        &self,
+        node: &NodeInfo,
+        request: JoinRequest,
+    ) -> Result<Response<JoinResponse>> {
+        match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
+            Ok(mut client) => Ok(client.join(request.clone()).await?),
+            Err(err) => Err(err.into()),
+        }
+    }
+
     async fn join_with_leaf_set(
         &self,
         request: &JoinRequest,

@@ -3,7 +3,13 @@ use tonic::{Response, Status};
 
 use super::super::{grpc::*, node::Node};
 
-use crate::internal::util::{self};
+use crate::{
+    error::*,
+    internal::{
+        dht::node::NodeInfo,
+        util::{self},
+    },
+};
 
 impl Node {
     pub async fn query_service(
@@ -111,6 +117,17 @@ impl Node {
                 Ok(r) => break Ok(r),
                 Err(err) => self.warn_and_fix_leaf_entry(&node, &err.to_string()).await,
             }
+        }
+    }
+
+    async fn connect_and_query(
+        &self,
+        node: &NodeInfo,
+        request: QueryRequest,
+    ) -> Result<Response<QueryResponse>> {
+        match NodeServiceClient::connect(node.pub_addr.to_owned()).await {
+            Ok(mut client) => Ok(client.query(request.clone()).await?),
+            Err(err) => Err(err.into()),
         }
     }
 }
