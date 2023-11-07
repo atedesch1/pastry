@@ -1,3 +1,4 @@
+pub mod fail;
 pub mod grpc;
 pub mod join;
 pub mod query;
