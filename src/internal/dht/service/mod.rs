@@ -19,15 +19,6 @@ use crate::{
 
 #[tonic::async_trait]
 impl NodeService for Node {
-    async fn get_node_id(
-        &self,
-        _request: Request<()>,
-    ) -> std::result::Result<Response<GetNodeIdResponse>, Status> {
-        info!("#{:016X}: Got request for get_node_id", self.id);
-
-        Ok(Response::new(GetNodeIdResponse { id: self.id }))
-    }
-
     async fn get_node_state(
         &self,
         _request: Request<()>,
@@ -66,16 +57,6 @@ impl NodeService for Node {
         info!("#{:016X}: Got request for query", self.id);
         self.block_until_routing_requests().await;
         self.query_service(request.get_ref()).await
-    }
-
-    async fn leave(
-        &self,
-        request: Request<LeaveRequest>,
-    ) -> std::result::Result<Response<()>, Status> {
-        info!("#{:016X}: Got request for leave", self.id);
-        self.block_until_routing_requests().await;
-
-        todo!()
     }
 
     type TransferKeysStream = UnboundedReceiverStream<std::result::Result<KeyValueEntry, Status>>;

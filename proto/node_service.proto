@@ -6,18 +6,16 @@ import "google/protobuf/empty.proto";
 import "node.proto";
 
 service NodeService {
-  // DEBUG
-  rpc GetNodeId(google.protobuf.Empty) returns (GetNodeIdResponse);
+  // INFO
   rpc GetNodeState(google.protobuf.Empty) returns (GetNodeStateResponse);
   rpc GetNodeTableEntry(GetNodeTableEntryRequest) returns (GetNodeTableEntryResponse);
 
-  // MAIN REQUESTS
+  // MAIN 
   rpc Join(JoinRequest) returns (JoinResponse);
-  rpc Leave(LeaveRequest) returns (google.protobuf.Empty);
   rpc Query(QueryRequest) returns (QueryResponse);
   rpc TransferKeys(TransferKeysRequest) returns (stream KeyValueEntry);
 
-  // UPDATE NEIGHBORS
+  // UPDATE 
   rpc AnnounceArrival(AnnounceArrivalRequest) returns (google.protobuf.Empty);
   rpc FixLeafSet(FixLeafSetRequest) returns (google.protobuf.Empty);
 }
