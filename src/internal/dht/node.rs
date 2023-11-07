@@ -288,7 +288,7 @@ impl Node {
         self.update_leaf_set(&mut data, &join_response.leaf_set)
             .await?;
 
-        self.announce_arrival(&mut data).await?;
+        self.announce_arrival_to_neighbors(&mut data).await?;
 
         Ok(())
     }
@@ -362,44 +362,6 @@ impl Node {
             "#{:016X}: Routing table updated: \n{}",
             self.id, state_data.table
         );
-        Ok(())
-    }
-
-    async fn announce_arrival(
-        &self,
-        state_data: &mut RwLockWriteGuard<'_, StateData>,
-    ) -> Result<()> {
-        info!("#{:016X}: Announcing arrival to all neighbors", self.id);
-        let announce_arrival_request = AnnounceArrivalRequest {
-            id: self.id,
-            pub_addr: self.pub_addr.clone(),
-        };
-
-        for entry in state_data.leaf.get_entries() {
-            if entry.id == self.id {
-                continue;
-            }
-
-            let mut client = Node::connect_with_retry(&entry.pub_addr).await?;
-            client
-                .announce_arrival(announce_arrival_request.clone())
-                .await?;
-        }
-
-        for entry in state_data.table.get_entries() {
-            if let Some(entry) = entry {
-                if entry.id == self.id {
-                    continue;
-                }
-
-                let mut client = Node::connect_with_retry(&entry.pub_addr).await?;
-                client
-                    .announce_arrival(announce_arrival_request.clone())
-                    .await?;
-            }
-        }
-        info!("#{:016X}: Announced arrival to all neighbors", self.id);
-
         Ok(())
     }
 

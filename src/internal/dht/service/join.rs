@@ -1,5 +1,5 @@
 use log::{info, warn};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, RwLockWriteGuard};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::{Response, Status};
 
@@ -9,7 +9,7 @@ use super::grpc::*;
 use crate::{
     error::*,
     internal::{
-        dht::node::{NodeInfo, NodeState},
+        dht::node::{NodeInfo, NodeState, StateData},
         hring::ring::*,
         util::{self, U64_HEX_NUM_OF_DIGITS},
     },
@@ -187,6 +187,44 @@ impl Node {
         self.change_state(NodeState::RoutingRequests).await;
 
         Ok(Response::new(()))
+    }
+
+    pub async fn announce_arrival_to_neighbors(
+        &self,
+        state_data: &mut RwLockWriteGuard<'_, StateData>,
+    ) -> Result<()> {
+        info!("#{:016X}: Announcing arrival to all neighbors", self.id);
+        let announce_arrival_request = AnnounceArrivalRequest {
+            id: self.id,
+            pub_addr: self.pub_addr.clone(),
+        };
+
+        for entry in state_data.leaf.get_entries() {
+            if entry.id == self.id {
+                continue;
+            }
+
+            let mut client = Node::connect_with_retry(&entry.pub_addr).await?;
+            client
+                .announce_arrival(announce_arrival_request.clone())
+                .await?;
+        }
+
+        for entry in state_data.table.get_entries() {
+            if let Some(entry) = entry {
+                if entry.id == self.id {
+                    continue;
+                }
+
+                let mut client = Node::connect_with_retry(&entry.pub_addr).await?;
+                client
+                    .announce_arrival(announce_arrival_request.clone())
+                    .await?;
+            }
+        }
+        info!("#{:016X}: Announced arrival to all neighbors", self.id);
+
+        Ok(())
     }
 
     pub async fn transfer_keys_service(
