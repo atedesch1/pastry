@@ -1,5 +1,5 @@
-use log::{info, warn};
-use tonic::{Request, Response, Status};
+use log::warn;
+use tonic::{Response, Status};
 
 use super::super::{grpc::*, node::Node};
 
