@@ -85,8 +85,7 @@ impl Node {
         NodeInfo::new(self.id, &self.pub_addr)
     }
 
-    /// Registers a new DHT node which will be available publicly on
-    /// http://hostname:port
+    /// Registers a new DHT node
     ///
     /// # Arguments
     ///
@@ -123,8 +122,7 @@ impl Node {
         })
     }
 
-    /// Registers a new DHT node which will be available publicly on
-    /// http://hostname:port
+    /// Registers a new DHT node
     ///
     /// # Arguments
     ///
@@ -211,7 +209,7 @@ impl Node {
         Ok(server_handle)
     }
 
-    /// Updates state and consumes node.
+    /// Updates state.
     ///
     /// # Arguments
     ///
@@ -222,7 +220,7 @@ impl Node {
     ///
     /// An empty Result.
     ///
-    pub async fn route_with_state(self, leaf: Vec<NodeInfo>, table: Vec<NodeInfo>) -> Result<()> {
+    pub async fn update_state(self, leaf: Vec<NodeInfo>, table: Vec<NodeInfo>) -> Result<()> {
         info!("#{:016X}: Updating connections", self.id);
         self.change_state(NodeState::UpdatingConnections).await;
 

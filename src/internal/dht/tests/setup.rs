@@ -204,7 +204,7 @@ impl Network {
                         .map(|f| f.info.clone())
                         .filter(|f| f.id != node.id)
                         .collect();
-                node.route_with_state(leaf_set, infos.clone()).await?;
+                node.update_state(leaf_set, infos.clone()).await?;
             } else {
                 break;
             }
