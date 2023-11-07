@@ -1,3 +1,6 @@
+use log::{info, warn};
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::{Response, Status};
 
 use super::super::{grpc::*, node::Node};
@@ -5,7 +8,8 @@ use super::super::{grpc::*, node::Node};
 use crate::{
     error::*,
     internal::{
-        dht::node::NodeInfo,
+        dht::node::{NodeInfo, NodeState},
+        hring::ring::*,
         util::{self, U64_HEX_NUM_OF_DIGITS},
     },
 };
@@ -156,5 +160,75 @@ impl Node {
                 Err(err) => self.warn_and_fix_leaf_entry(&node, &err.to_string()).await,
             }
         }
+    }
+
+    pub async fn announce_arrival_service(
+        &self,
+        req: &AnnounceArrivalRequest,
+    ) -> std::result::Result<Response<()>, Status> {
+        self.change_state(NodeState::UpdatingConnections).await;
+
+        let mut data = self.state.data.write().await;
+
+        let node_entry = NodeEntry {
+            id: req.id,
+            pub_addr: req.pub_addr.clone(),
+        };
+
+        if let Some(entry) = data.leaf.get(req.id) {
+            if entry.id != req.id {
+                self.update_leaf_set(&mut data, &node_entry).await?;
+            }
+        }
+
+        self.update_routing_table(&mut data, &node_entry).await?;
+
+        self.change_state(NodeState::RoutingRequests).await;
+
+        Ok(Response::new(()))
+    }
+
+    pub async fn transfer_keys_service(
+        &self,
+        req: &TransferKeysRequest,
+    ) -> std::result::Result<Response<<Node as NodeService>::TransferKeysStream>, Status> {
+        let prev_id = self.id;
+        let node_id = req.id;
+
+        let (tx, rx) = mpsc::unbounded_channel();
+
+        let state = self.state.clone();
+
+        tokio::spawn(async move {
+            let mut store = state.store.write().await;
+            let entries = store
+                .get_entries(|key| !Ring64::is_in_range(prev_id, node_id, key))
+                .await
+                .iter()
+                .map(|e| (e.0.clone(), e.1.clone()))
+                .collect::<Vec<(u64, Vec<u8>)>>();
+
+            info!("#{:016X}: Transferring keys to #{:016X}", prev_id, node_id);
+
+            for (key, value) in &entries {
+                // TODO: implement retry logic
+                match tx.send(Ok(KeyValueEntry {
+                    key: key.clone(),
+                    value: value.clone(),
+                })) {
+                    Ok(_) => {
+                        store.delete(key);
+                    }
+                    Err(err) => {
+                        warn!(
+                            "#{:016X}: Could not transfer key {:016X} to #{:016X}: {}",
+                            prev_id, key, node_id, err
+                        );
+                    }
+                };
+            }
+        });
+
+        Ok(Response::new(UnboundedReceiverStream::new(rx)))
     }
 }
