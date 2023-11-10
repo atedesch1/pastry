@@ -115,19 +115,15 @@ impl Node {
         data.table.remove(node.id)?;
 
         let matched_digits = util::get_num_matched_digits(self.id, node.id)?;
-        let mut matched = matched_digits;
-        let replacement = 'outer: loop {
-            let row = data.table.get_row(matched as usize);
-            if row.is_none() {
-                break None;
-            }
+        let row_index = matched_digits;
+        let column_index = util::get_nth_digit_in_u64_hex(node.id, matched_digits as usize + 1)?;
 
-            for entry in row.unwrap() {
-                if entry.is_none() || entry.unwrap().id == node.id {
+        let mut matched = matched_digits;
+        while let Some(row) = data.table.get_row(matched as usize) {
+            for entry in row.iter().filter_map(|&opt| opt) {
+                if entry.id == node.id || entry.id == self.id {
                     continue;
                 }
-
-                let entry = entry.unwrap();
 
                 let mut client = match NodeServiceClient::connect(entry.pub_addr.to_owned()).await {
                     Ok(client) => client,
@@ -142,31 +138,27 @@ impl Node {
 
                 let table_entry = client
                     .get_node_table_entry(GetNodeTableEntryRequest {
-                        row: matched_digits,
-                        column: util::get_nth_digit_in_u64_hex(
-                            node.id,
-                            matched_digits as usize + 1,
-                        )?,
+                        row: row_index,
+                        column: column_index,
                     })
                     .await?
                     .into_inner()
                     .node;
 
-                if table_entry.is_some() && table_entry.clone().unwrap().id != node.id {
-                    break 'outer table_entry;
+                if let Some(replacement) = table_entry {
+                    if replacement.id != node.id {
+                        data.table
+                            .insert(replacement.id, NodeInfo::from_node_entry(&replacement))?;
+                        debug!("#{:016X}: Fixed routing table: \n{}", self.id, data.table);
+                        break;
+                    }
                 }
             }
 
             matched += 1;
             if matched == U64_HEX_NUM_OF_DIGITS {
-                break None;
+                break;
             }
-        };
-
-        if let Some(replacement) = replacement {
-            data.table
-                .insert(replacement.id, NodeInfo::from_node_entry(&replacement))?;
-            debug!("#{:016X}: Fixed routing table: \n{}", self.id, data.table);
         }
 
         self.change_state(NodeState::RoutingRequests).await;
