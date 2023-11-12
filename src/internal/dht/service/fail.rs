@@ -121,10 +121,6 @@ impl Node {
         let mut matched = matched_digits;
         while let Some(row) = data.table.get_row(matched as usize) {
             for entry in row.iter().filter_map(|&opt| opt) {
-                if entry.id == node.id || entry.id == self.id {
-                    continue;
-                }
-
                 let mut client = match NodeServiceClient::connect(entry.pub_addr.to_owned()).await {
                     Ok(client) => client,
                     Err(err) => {
@@ -146,7 +142,8 @@ impl Node {
                     .node;
 
                 if let Some(replacement) = table_entry {
-                    if replacement.id != node.id {
+                    if let Ok(_) = NodeServiceClient::connect(replacement.pub_addr.to_owned()).await
+                    {
                         data.table
                             .insert(replacement.id, NodeInfo::from_node_entry(&replacement))?;
                         debug!("#{:016X}: Fixed routing table: \n{}", self.id, data.table);
