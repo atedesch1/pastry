@@ -78,6 +78,19 @@ impl<T: Clone> LeafSet<T> {
             .collect()
     }
 
+    /// Gets filtered leaf set entries.
+    ///
+    pub fn get_filtered_entries<F>(&self, filter: F) -> Vec<&T>
+    where
+        F: Fn(u64) -> bool,
+    {
+        self.set
+            .iter()
+            .filter(|&e| filter(e.key))
+            .map(|e| &e.value)
+            .collect()
+    }
+
     /// Gets the node that is the owner of the supplied key.
     ///
     /// # Arguments
