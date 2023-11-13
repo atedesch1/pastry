@@ -2,7 +2,10 @@ use tonic::Request;
 
 use crate::{
     error::*,
-    internal::{pastry::shared::Config, util::get_neighbors},
+    internal::{
+        pastry::shared::Config,
+        util::{self, get_neighbors},
+    },
 };
 
 use super::{
@@ -58,93 +61,62 @@ async fn test_join() -> Result<()> {
 #[tokio::test(flavor = "multi_thread")]
 #[serial_test::serial]
 async fn test_transfer_keys() -> Result<()> {
+    let initial_ids: Vec<u64> = (0..6)
+        .map(|i| (i * (u64::MAX as u128) / 6) as u64)
+        .collect();
+    let keys: Vec<u64> = initial_ids
+        .iter()
+        .map(|id| vec![id + u64::MAX / 18, id + u64::MAX / 9])
+        .flatten()
+        .collect();
+
     let mut network = Network::new(NetworkConfiguration {
         pastry_conf: Config::new(4),
-        num_nodes: 0,
+        num_nodes: 6,
     })
-    .with_ids(vec![u64::MAX - 10, 0, 10])
+    .with_ids(initial_ids)
     .init()
     .await?;
 
-    network.add_node().await?;
+    for key in &keys {
+        let (_, mut client) = network.get_random_node_connection().await?;
+        client
+            .query(QueryRequest {
+                from_id: 0,
+                matched_digits: 0,
+                hops: 0,
+                query_type: QueryType::Set.into(),
+                key: *key,
+                value: Some(key.to_be_bytes().to_vec()),
+            })
+            .await?;
+    }
 
-    let (_, mut client) = network.get_random_node_connection().await?;
-    client
-        .query(QueryRequest {
-            from_id: 0,
-            matched_digits: 0,
-            hops: 0,
-            query_type: QueryType::Set.into(),
-            key: u64::MAX - 5,
-            value: Some("first".as_bytes().to_vec()),
-        })
-        .await?;
-    client
-        .query(QueryRequest {
-            from_id: 0,
-            matched_digits: 0,
-            hops: 0,
-            query_type: QueryType::Set.into(),
-            key: 5,
-            value: Some("second".as_bytes().to_vec()),
-        })
-        .await?;
-    client
-        .query(QueryRequest {
-            from_id: 0,
-            matched_digits: 0,
-            hops: 0,
-            query_type: QueryType::Set.into(),
-            key: 15,
-            value: Some("third".as_bytes().to_vec()),
-        })
-        .await?;
+    let more_ids: Vec<u64> = (0..6)
+        .map(|i| u64::MAX / 12 + (i * (u64::MAX as u128) / 6) as u64)
+        .collect();
+    for id in more_ids {
+        network.add_node_with_id(id).await?;
+    }
 
-    network.add_node().await?;
-    network.add_node().await?;
+    for key in &keys {
+        let (_, mut client) = network.get_random_node_connection().await?;
+        let res = client
+            .query(QueryRequest {
+                from_id: 0,
+                matched_digits: 0,
+                hops: 0,
+                query_type: QueryType::Get.into(),
+                key: *key,
+                value: None,
+            })
+            .await?
+            .into_inner();
+        let idx = find_responsible(&network.nodes, *key);
 
-    let res = client
-        .query(QueryRequest {
-            from_id: 0,
-            matched_digits: 0,
-            hops: 0,
-            query_type: QueryType::Get.into(),
-            key: u64::MAX - 5,
-            value: None,
-        })
-        .await?
-        .into_inner();
-    assert_eq!(res.from_id, u64::MAX - 10);
-    assert_eq!(String::from_utf8(res.value.unwrap())?, "first".to_owned());
-
-    let res = client
-        .query(QueryRequest {
-            from_id: 0,
-            matched_digits: 0,
-            hops: 0,
-            query_type: QueryType::Get.into(),
-            key: 5,
-            value: None,
-        })
-        .await?
-        .into_inner();
-    assert_eq!(res.from_id, 0);
-    assert_eq!(String::from_utf8(res.value.unwrap())?, "second".to_owned());
-
-    let res = client
-        .query(QueryRequest {
-            from_id: 0,
-            matched_digits: 0,
-            hops: 0,
-            query_type: QueryType::Get.into(),
-            key: 15,
-            value: None,
-        })
-        .await?
-        .into_inner();
-    assert_eq!(res.from_id, 10);
-    assert_eq!(String::from_utf8(res.value.unwrap())?, "third".to_owned());
-
+        assert_eq!(res.from_id, network.nodes[idx].info.id);
+        assert_eq!(res.value, Some(key.to_be_bytes().to_vec()));
+    }
     network.shutdown();
 
     Ok(())

@@ -251,6 +251,38 @@ impl Network {
         Ok(info)
     }
 
+    pub async fn add_node_with_id(&mut self, id: u64) -> Result<NodeInfo> {
+        let (info, handle) = loop {
+            let addr: SocketAddr = format!("0.0.0.0:{}", self.available_port).parse()?;
+            let node = Node::from_id(self.conf.pastry_conf.clone(), addr, addr, id)?;
+
+            match self.setup_node(node).await {
+                Ok(n) => break n,
+                Err(e) => {
+                    warn!("error setting up node: {}", e);
+                    self.available_port += 1;
+                }
+            }
+        };
+
+        self.nodes.push(NetworkNode {
+            info: info.clone(),
+            handle,
+        });
+
+        self.conf.num_nodes += 1;
+        self.num_deployed += 1;
+
+        self.nodes.sort_by_key(|f| f.info.id);
+
+        println!(
+            "Added node #{:016X} with address {}",
+            info.id, info.pub_addr
+        );
+
+        Ok(info)
+    }
+
     async fn setup_node(&self, node: Node) -> Result<(NodeInfo, JoinHandle<Result<()>>)> {
         let bootstrap_addr = if self.nodes.is_empty() {
             None

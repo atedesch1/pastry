@@ -5,29 +5,10 @@ use tonic::Request;
 use super::{super::service::grpc::*, setup::*};
 use crate::{
     error::*,
-    internal::{hring::hasher::Sha256Hasher, pastry::shared::Config},
+    internal::{
+        dht::tests::util::find_responsible, hring::hasher::Sha256Hasher, pastry::shared::Config,
+    },
 };
-
-fn find_responsible(nodes: &Vec<NetworkNode>, key: u64) -> usize {
-    let mut position = match nodes.binary_search_by_key(&key, |f| f.info.id) {
-        Ok(position) => position,
-        Err(position) => position,
-    };
-
-    if position == nodes.len() {
-        position -= 1;
-    }
-
-    if key < nodes[position].info.id {
-        position = if position == 0 {
-            nodes.len() - 1
-        } else {
-            position - 1
-        };
-    }
-
-    position
-}
 
 fn get_random_key(i: i32) -> Result<u64> {
     Ok(Sha256Hasher::hash_once(
