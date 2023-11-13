@@ -337,8 +337,7 @@ impl Node {
                 .leaf
                 .insert(entry.id, NodeInfo::from_node_entry(entry))?;
         }
-        info!("#{:016X}: Updated leaf set", self.id);
-        debug!("#{:016X}: Leaf set updated: \n{}", self.id, state_data.leaf);
+        debug!("#{:016X}: Updated leaf set: \n{}", self.id, state_data.leaf);
 
         Ok(())
     }
@@ -357,9 +356,8 @@ impl Node {
                 .table
                 .insert(entry.id, NodeInfo::from_node_entry(entry))?;
         }
-        info!("#{:016X}: Updated routing table", self.id);
         debug!(
-            "#{:016X}: Routing table updated: \n{}",
+            "#{:016X}: Updated routing table: \n{}",
             self.id, state_data.table
         );
         Ok(())
